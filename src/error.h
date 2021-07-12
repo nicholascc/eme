@@ -1,6 +1,10 @@
 #ifndef ERROR_H
 #define ERROR_H
 
+#include <stdbool.h>
+
+bool should_exit_after_parsing; // indicates whether an error has occurred during parsing which would cause the later stages of compilation to fail.
+
 // Given an error message, line, character, and file, prints out the error with a nice display of the line in which it occurred.
 // If any of the last 3 values are negative, their values are assumed to not be known the error message adapts to display correctly. (for example, it only displays the file if the line is negative, or it says "unknown location" if the file_id is invalid)
 void print_error_message(char *message, int file_id, int line, int character);

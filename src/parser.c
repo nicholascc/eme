@@ -6,6 +6,7 @@
 
 #include "ast.h"
 #include "lexer.h"
+#include "error.h"
 
 Ast_Node *allocate_ast_node(Ast_Node node) {
   Ast_Node *result = malloc(sizeof(Ast_Node));
@@ -20,13 +21,23 @@ Type_Info unknown_int_type_info() {
 }
 
 
-void error_token(char *message, Token t) {
+void error_token(char *message, Token t, bool should_exit_now) {
   print_error_message(message, t.file_id, t.line, t.character);
-  exit(1);
+  if(should_exit_now) exit(1);
+  should_exit_after_parsing = true;
 }
 
 void error_unexpected_token(Token t) {
-  error_token("Unexpected token.", t);
+  error_token("Unexpected token.", t, true);
+}
+
+void expect_and_eat_semicolon(Lexer *l) { // WARNING: will call save_state!
+  save_state(l);
+  Token semicolon = peek_token(l);
+  if(semicolon.type != TSEMICOLON) {
+    error_token("Unexpected token. You might be missing a semicolon.", semicolon, false);
+    revert_state(l);
+  }
 }
 
 bool is_non_unary_operator(Token t) {
@@ -376,17 +387,13 @@ Ast_Node parse_any_statement(Lexer *l) {
     result.file_id = first.file_id;
     result.type = NODE_RETURN;
     result.data._return.value = allocate_ast_node(parse_expression(l, 0));
-    Token semicolon = peek_token(l);
-    if(semicolon.type != TSEMICOLON)
-      error_token("Unexpected token. You might be missing a semicolon.", semicolon);
+    expect_and_eat_semicolon(l);
     return result;
   }
 
   revert_state(l);
   Ast_Node result = parse_expression(l, 0);
-  Token semicolon = peek_token(l);
-  if(semicolon.type != TSEMICOLON)
-    error_token("Unexpected token. You might be missing a semicolon.", semicolon);
+  expect_and_eat_semicolon(l);
   return result;
 }
 
@@ -399,10 +406,7 @@ Ast_Node parse_decl(Lexer *l) {
 
   if(type.type == TEQUALS) {
     Ast_Node value_ast = parse_expression(l, 0);
-    Token semicolon = peek_token(l);
-    if(semicolon.type != TSEMICOLON) {
-      error_token("Unexpected token. You might be missing a semicolon.", semicolon);
-    }
+    expect_and_eat_semicolon(l);
     // decl with set without type
     Ast_Node result;
     result.line = colon.line;
@@ -430,10 +434,7 @@ Ast_Node parse_decl(Lexer *l) {
     } else if(equals.type == TEQUALS) {
       // decl with type and set
       Ast_Node *value_ast = allocate_ast_node(parse_expression(l,0));
-      Token semicolon = peek_token(l);
-      if(semicolon.type != TSEMICOLON) {
-        error_token("Unexpected token. You might be missing a semicolon.", semicolon);
-      }
+      expect_and_eat_semicolon(l);
       Ast_Node result;
       result.line = colon.line;
       result.character = colon.character;
@@ -494,7 +495,7 @@ Ast_Node parse_block(Lexer *l) {
     if(next.type == TCLOSE_BRACE)
       break;
     else if(next.type == TEOL)
-      error_token("'{' has no matching '}'", first);
+      error_token("'{' has no matching '}'", first, true);
     revert_state(l);
 
     Ast_Node node = parse_any_statement(l);
@@ -512,6 +513,7 @@ Ast_Node parse_block(Lexer *l) {
       Scope_push(&scope, e);
     } else if(node.type == NODE_FUNCTION_DEFINITION) {
       print_error_message("Function definitions are only allowed in the global scope.", node.file_id, node.line, node.character);
+      should_exit_after_parsing = true;
     }
   }
 
@@ -531,7 +533,7 @@ Ast_Node parse_definition(Lexer *l) {
   assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");
   Token fn = peek_token(l);
 
-  if(fn.type != TFN) error_token("Unexpected token. Only function definitions (using 'fn') are currently supported.", fn);
+  if(fn.type != TFN) error_token("Unexpected token. Only function definitions (using 'fn') are currently supported.", fn, true);
 
   Token open_paren = peek_token(l);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
@@ -540,7 +542,7 @@ Ast_Node parse_definition(Lexer *l) {
   if(close_paren.type != TCLOSE_PAREN) error_unexpected_token(close_paren);
 
   Token arrow = peek_token(l);
-  if(arrow.type != TARROW) error_token("Unexpected token, expected '->'.", arrow);
+  if(arrow.type != TARROW) error_token("Unexpected token, expected '->'.", arrow, true);
 
   Ast_Node return_type = parse_type(l);
   Ast_Node body = parse_block(l);

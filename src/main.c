@@ -17,10 +17,13 @@ int main(void) {
   char *contents = add_file("./examples/test.eme");
   printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
   Lexer lexer = new_lexer(contents, 0);
-  printf("Parsed result:\n\n");
   Ast_File arr = parse_file(&lexer);
+  if(should_exit_after_parsing) {
+    printf("An error occurred during parsing, exiting.\n");
+    exit(1);
+  }
+  printf("Parsed result:\n\n");
   print_ast_file(arr);
-  //print_error_message("message",0,1,3);
   printf("\n");
   return 0;
 }
