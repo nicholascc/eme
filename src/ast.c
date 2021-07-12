@@ -4,9 +4,9 @@
 #include "c-utils/darray.h"
 #include "symbol_table.h"
 
-GENERATE_DARRAY_FUNCTIONS(Ast_Node, Ast_Node_Array);
-GENERATE_DARRAY_FUNCTIONS(Node_Pointer_Array_Entry, Node_Pointer_Array);
-GENERATE_DARRAY_FUNCTIONS(Scope_Entry, Scope);
+GENERATE_DARRAY_CODE(Ast_Node, Ast_Node_Array);
+GENERATE_DARRAY_CODE(Node_Pointer_Array_Entry, Node_Pointer_Array);
+GENERATE_DARRAY_CODE(Scope_Entry, Scope);
 
 void print_symbol(u64 symbol) {
   int length;

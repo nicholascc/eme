@@ -18,7 +18,7 @@ void ARRAY_NAME##_push(ARRAY_NAME *arr, TYPE push_value); \
 TYPE ARRAY_NAME##_pop(ARRAY_NAME *arr)
 
 
-#define GENERATE_DARRAY_FUNCTIONS(TYPE, ARRAY_NAME) \
+#define GENERATE_DARRAY_CODE(TYPE, ARRAY_NAME) \
  \
 ARRAY_NAME init_##ARRAY_NAME(u32 reserved) { \
   assert(reserved > 1 && "reserve size must be at least 2"); \

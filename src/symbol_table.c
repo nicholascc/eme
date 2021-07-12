@@ -18,9 +18,9 @@ typedef struct String_To_Id_Entry {
 
 // @Speed: currently symbol table (string to id) implementation is a list (actually technically list of lists), meaning looking up an id from a string is very inefficient. In the future (if speed is a problem in the lexer) I should use hash table or self-organizing list instead.
 GENERATE_DARRAY_HEADER(String_To_Id_Entry, String_To_Id_Internal_Array);
-GENERATE_DARRAY_FUNCTIONS(String_To_Id_Entry, String_To_Id_Internal_Array);
+GENERATE_DARRAY_CODE(String_To_Id_Entry, String_To_Id_Internal_Array);
 GENERATE_DARRAY_HEADER(String_To_Id_Internal_Array, String_To_Id_Symbol_Table);
-GENERATE_DARRAY_FUNCTIONS(String_To_Id_Internal_Array, String_To_Id_Symbol_Table);
+GENERATE_DARRAY_CODE(String_To_Id_Internal_Array, String_To_Id_Symbol_Table);
 
 // Symbol table id -> str is a darray indexed by ID.
 typedef struct Id_To_String_Entry {
@@ -29,7 +29,7 @@ typedef struct Id_To_String_Entry {
 } Id_To_String_Entry;
 
 GENERATE_DARRAY_HEADER(Id_To_String_Entry, Id_To_String_Symbol_Table);
-GENERATE_DARRAY_FUNCTIONS(Id_To_String_Entry, Id_To_String_Symbol_Table);
+GENERATE_DARRAY_CODE(Id_To_String_Entry, Id_To_String_Symbol_Table);
 
 
 

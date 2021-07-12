@@ -22,7 +22,7 @@ char *os_load_file(char *filename) {
 	return result;
 }
 
-GENERATE_DARRAY_FUNCTIONS(File_Data, File_Array);
+GENERATE_DARRAY_CODE(File_Data, File_Array);
 
 File_Array files;
 
