@@ -5,8 +5,11 @@
 #include "symbol_table.h"
 
 GENERATE_DARRAY_CODE(Ast_Node, Ast_Node_Array);
-GENERATE_DARRAY_CODE(Node_Pointer_Array_Entry, Node_Pointer_Array);
+GENERATE_DARRAY_CODE(Node_Ptr_Array_Entry, Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope);
+GENERATE_DARRAY_CODE(Linear_Ast_Unit_Ptr, Linear_Ast_Unit_Ptr_Array);
+GENERATE_DARRAY_CODE(Linear_Ast_Unit, Linear_Ast_Unit_Array);
+
 
 void print_symbol(u64 symbol) {
   int length;
@@ -14,11 +17,6 @@ void print_symbol(u64 symbol) {
   for(int i = 0; i < length; i++) {
     printf("%c",str[i]);
   }
-}
-
-void print_ast_file(Ast_File f) {
-  print_scope(f.scope);
-  print_ast_statement_array(f.nodes);
 }
 
 void print_scope(Scope s) {
@@ -38,6 +36,13 @@ void print_scope(Scope s) {
     printf("]\n");
   }
   printf("]\n");
+}
+
+void print_ast(Ast ast) {
+  print_scope(ast.scope);
+  for(int i = 0; i < ast.linear_ast_units.length; i++) {
+    print_ast_node(*ast.linear_ast_units.data[i].node);
+  }
 }
 
 void print_ast_statement_array(Ast_Node_Array nodes) {

@@ -451,22 +451,26 @@ Ast_Node parse_decl(Lexer *l) {
   }
 }
 
-Ast_File parse_file(Lexer *l) {
-  Ast_Node_Array nodes = init_Ast_Node_Array(2);
+Ast parse_file(Lexer *l) {
+  Linear_Ast_Unit_Array units = init_Linear_Ast_Unit_Array(32);
   Scope scope = init_Scope(2);
   while(1) {
     save_state(l);
     Token next = peek_token(l);
     revert_state(l);
     if(next.type == TEOL) {
-      Ast_File r;
+      Ast r;
       r.scope = scope;
-      r.nodes = nodes;
+      r.linear_ast_units = units;
       return r;
     }
 
     Ast_Node node = parse_any_statement(l);
-    Ast_Node_Array_push(&nodes, node);
+    Linear_Ast_Unit unit;
+    unit.node = malloc(sizeof(Ast_Node));
+    *unit.node = node;
+    unit.dependencies = init_Linear_Ast_Unit_Ptr_Array(2);
+    Linear_Ast_Unit_Array_push(&units, unit);
 
     if(node.type == NODE_DECL || node.type == NODE_DECL_WITH_SET || node.type == NODE_FUNCTION_DEFINITION) {
       Scope_Entry e;
@@ -475,9 +479,9 @@ Ast_File parse_file(Lexer *l) {
         case NODE_DECL_WITH_SET: e.symbol = node.data.decl_with_set.symbol;
         case NODE_FUNCTION_DEFINITION: e.symbol = node.data.function_definition.symbol;
       }
-      e.declaration = nodes.data+nodes.length-1;
+      e.declaration = unit.node;
       assert(e.declaration->line == node.line); // @Cleanup using this for development of scope feature
-      e.references = init_Node_Pointer_Array(2);
+      e.references = init_Node_Ptr_Array(2);
       Scope_push(&scope, e);
     }
   }
@@ -509,7 +513,7 @@ Ast_Node parse_block(Lexer *l) {
       }
       e.declaration = nodes.data+nodes.length-1;
       assert(e.declaration->line == node.line); // @Cleanup using this for development of scope feature
-      e.references = init_Node_Pointer_Array(2);
+      e.references = init_Node_Ptr_Array(2);
       Scope_push(&scope, e);
     } else if(node.type == NODE_FUNCTION_DEFINITION) {
       print_error_message("Function definitions are only allowed in the global scope.", node.file_id, node.line, node.character);

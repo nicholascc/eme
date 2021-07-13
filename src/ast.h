@@ -20,7 +20,6 @@ typedef enum Type_Info_Type {
   TYPE_UNKNOWN_INT,
 
   TYPE_STRUCT,
-  TYPE_POINTER,
   TYPE_ARRAY
 } Type_Info_Type;
 
@@ -28,14 +27,9 @@ typedef struct Type_Info Type_Info;
 
 typedef struct Type_Info {
   Type_Info_Type type;
+  int dereference_count;
   union {
     // let's not do structs yet.
-
-    struct {
-      Type_Info *value_type;
-      int dereference_count;
-    } pointer;
-
     struct {
       Type_Info *element_type;
     } array;
@@ -87,22 +81,34 @@ typedef enum Ast_Unary_Operator {
 typedef struct Ast_Node Ast_Node;
 GENERATE_DARRAY_HEADER(Ast_Node, Ast_Node_Array);
 
-typedef Ast_Node* Node_Pointer_Array_Entry; // following macro doesn't work with a direct pointer
+typedef Ast_Node* Node_Ptr_Array_Entry; // following macro doesn't work with a direct pointer
 
-GENERATE_DARRAY_HEADER(Node_Pointer_Array_Entry, Node_Pointer_Array);
+GENERATE_DARRAY_HEADER(Node_Ptr_Array_Entry, Node_Ptr_Array);
 
 typedef struct Scope_Entry {
   u64 symbol;
   Ast_Node *declaration;
-  Node_Pointer_Array references;
+  Node_Ptr_Array references;
 } Scope_Entry;
 
 GENERATE_DARRAY_HEADER(Scope_Entry, Scope);
 
-typedef struct Ast_File {
-  Ast_Node_Array nodes;
+typedef struct Linear_Ast_Unit Linear_Ast_Unit;
+typedef Linear_Ast_Unit* Linear_Ast_Unit_Ptr;
+
+GENERATE_DARRAY_HEADER(Linear_Ast_Unit_Ptr, Linear_Ast_Unit_Ptr_Array);
+
+typedef struct Linear_Ast_Unit {
+  Ast_Node *node;
+  Linear_Ast_Unit_Ptr_Array dependencies;
+} Linear_Ast_Unit;
+
+GENERATE_DARRAY_HEADER(Linear_Ast_Unit, Linear_Ast_Unit_Array);
+
+typedef struct Ast {
+  Linear_Ast_Unit_Array linear_ast_units;
   Scope scope;
-} Ast_File;
+} Ast;
 
 
 
@@ -172,7 +178,7 @@ typedef struct Ast_Node {
 } Ast_Node;
 
 void print_symbol(u64 symbol);
-void print_ast_file(Ast_File f);
+void print_ast(Ast ast);
 void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Array nodes);
 void print_ast_node(Ast_Node node);
