@@ -42,6 +42,7 @@ void print_ast(Ast ast) {
   print_scope(ast.scope);
   for(int i = 0; i < ast.linear_ast_units.length; i++) {
     print_ast_node(*ast.linear_ast_units.data[i].node);
+    printf("\n\n");
   }
 }
 
