@@ -9,6 +9,7 @@
 #include "parser.h"
 #include "files.h"
 #include "error.h"
+#include "dependency_graph.h"
 
 
 int main(void) {
@@ -25,5 +26,8 @@ int main(void) {
   printf("Parsed result:\n\n");
   print_ast(ast);
   printf("\n");
+
+  form_dependency_graph(&ast);
+  print_ast(ast);
   return 0;
 }
