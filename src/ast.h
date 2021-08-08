@@ -93,14 +93,8 @@ typedef struct Scope_Entry {
 
 GENERATE_DARRAY_HEADER(Scope_Entry, Scope);
 
-typedef struct Linear_Ast_Unit Linear_Ast_Unit;
-typedef Linear_Ast_Unit* Linear_Ast_Unit_Ptr;
-
-GENERATE_DARRAY_HEADER(Linear_Ast_Unit_Ptr, Linear_Ast_Unit_Ptr_Array);
-
 typedef struct Linear_Ast_Unit {
   Ast_Node *node;
-  Linear_Ast_Unit_Ptr_Array dependencies;
 } Linear_Ast_Unit;
 
 GENERATE_DARRAY_HEADER(Linear_Ast_Unit, Linear_Ast_Unit_Array);
