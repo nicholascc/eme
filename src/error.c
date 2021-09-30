@@ -6,6 +6,7 @@
 #include "files.h"
 
 bool should_exit_after_parsing = false;
+bool should_exit_after_type_inference = false;
 
 int int_log10(int x) {
   return (int)log10((double)x); // @Cleanup this is ugly

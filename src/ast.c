@@ -4,12 +4,10 @@
 #include "c-utils/darray.h"
 #include "symbol_table.h"
 
-GENERATE_DARRAY_CODE(Ast_Node, Ast_Node_Array);
-GENERATE_DARRAY_CODE(Node_Ptr_Array_Entry, Node_Ptr_Array);
-GENERATE_DARRAY_CODE(Scope_Entry, Scope);
-GENERATE_DARRAY_CODE(Linear_Ast_Unit_Ptr, Linear_Ast_Unit_Ptr_Array);
-GENERATE_DARRAY_CODE(Linear_Ast_Unit, Linear_Ast_Unit_Array);
+GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
+GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
 
+Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
 
 void print_symbol(u64 symbol) {
   int length;
@@ -21,18 +19,12 @@ void print_symbol(u64 symbol) {
 
 void print_scope(Scope s) {
   printf("[\n");
-  for(int i = 0; i < s.length; i++) {
-    Scope_Entry e = s.data[i];
+  for(int i = 0; i < s.entries.length; i++) {
+    Scope_Entry e = s.entries.data[i];
     print_symbol(e.symbol);
     printf("\n");
-    /*printf("  [decl: ");
+    printf("  [decl: ");
     print_ast_node(*e.declaration);
-    printf("]\n");*/
-    printf("  [ refs: ");
-    for(int j = 0; j < e.references.length; j++) {
-      printf("\n    ");
-      print_ast_node(*e.references.data[j]);
-    }
     printf("]\n");
   }
   printf("]\n");
@@ -41,15 +33,15 @@ void print_scope(Scope s) {
 void print_ast(Ast ast) {
   print_scope(ast.scope);
   for(int i = 0; i < ast.linear_ast_units.length; i++) {
-    print_ast_node(*ast.linear_ast_units.data[i].node);
+    print_ast_node(*ast.linear_ast_units.data[i]);
     printf("\n\n");
   }
 }
 
-void print_ast_statement_array(Ast_Node_Array nodes) {
+void print_ast_statement_array(Ast_Node_Ptr_Array nodes) {
   for(int i = 0; i < nodes.length; i++) {
-    Ast_Node node = nodes.data[i];
-    print_ast_node(node);
+    Ast_Node *node = nodes.data[i];
+    print_ast_node(*node);
     printf(";\n");
   }
 }
@@ -117,28 +109,29 @@ void print_ast_node(Ast_Node n) {
       break;
 
     case NODE_FUNCTION_CALL:
-      print_ast_node(*n.data.function_call.function);
+      print_ast_node(*n.data.function_call.identifier);
       printf("(");
       for(int i = 0; i < n.data.function_call.arguments.length; i++) {
         if(i > 0) printf(", ");
-        print_ast_node(n.data.function_call.arguments.data[i]);
+        print_ast_node(*n.data.function_call.arguments.data[i]);
       }
       printf(")");
       break;
 
-    case NODE_DECL_WITH_SET:
-      print_symbol(n.data.decl_with_set.symbol);
-      if(n.data.decl_with_set.has_type) {
+    case NODE_TYPED_DECL_SET:
+    case NODE_UNTYPED_DECL_SET:
+      print_symbol(n.data.decl_set.symbol);
+      if(n.type == NODE_TYPED_DECL_SET) {
         printf(": ");
-        print_ast_node(*n.data.decl_with_set.type);
+        print_ast_node(*n.data.decl_set.type);
         printf(" = ");
       } else {
         printf(" := ");
       }
-      print_ast_node(*n.data.decl_with_set.value);
+      print_ast_node(*n.data.decl_set.value);
       break;
 
-    case NODE_DECL:
+    case NODE_TYPED_DECL:
       print_symbol(n.data.decl.symbol);
       printf(": ");
       print_ast_node(*n.data.decl.type);
@@ -163,6 +156,35 @@ void print_ast_node(Ast_Node n) {
       print_ast_statement_array(n.data.block.statements);
       printf("}");
       break;
-    default: printf("CANNOT PRINT NODE"); break;
+
+    case NODE_PRIMITIVE_TYPE:
+      printf("%s", type_info_to_string((Type_Info){n.data.primitive_type, 0, {0}}));
+      break;
+
+    default: printf("CANNOT PRINT NODE TYPE:%i", n.type); break;
   }
+}
+
+char *type_info_to_string(Type_Info t) { // @Incomplete this should probably be better but strings are hard :(
+  switch(t.type) {
+    case TYPE_UNKNOWN:     return "unknown";
+    case TYPE_UINT:        return "uint";
+    case TYPE_INT:         return "int";
+    case TYPE_S8:          return "s8";
+    case TYPE_S16:         return "s16";
+    case TYPE_S32:         return "s32";
+    case TYPE_S64:         return "s64";
+    case TYPE_U8:          return "u8";
+    case TYPE_U16:         return "u16";
+    case TYPE_U32:         return "u32";
+    case TYPE_U64:         return "u64";
+    case TYPE_UNKNOWN_INT: return "literal integer";
+    default:
+      return "[unprintable type]";
+  }
+}
+
+void error_at_ast_node(char *message, Ast_Node n) {
+  print_ast_node(n);
+  print_error_message(message, n.file_id, n.line, n.character);
 }

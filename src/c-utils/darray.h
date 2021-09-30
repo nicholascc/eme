@@ -14,6 +14,7 @@ typedef struct ARRAY_NAME { \
 } ARRAY_NAME; \
 ARRAY_NAME init_##ARRAY_NAME(u32 reserved); \
 u64 ARRAY_NAME##_size(ARRAY_NAME arr); \
+TYPE *ARRAY_NAME##_alloc(ARRAY_NAME *arr); \
 void ARRAY_NAME##_push(ARRAY_NAME *arr, TYPE push_value); \
 TYPE ARRAY_NAME##_pop(ARRAY_NAME *arr)
 
@@ -34,14 +35,19 @@ u64 ARRAY_NAME##_size(ARRAY_NAME arr) { \
   return arr.length * sizeof(TYPE); \
 } \
  \
-void ARRAY_NAME##_push(ARRAY_NAME *arr, TYPE push_value) { \
+TYPE *ARRAY_NAME##_alloc(ARRAY_NAME *arr) { \
   if(arr->length == arr->reserved) { \
     arr->reserved += arr->reserved / 2; \
     arr->data = realloc(arr->data, arr->reserved * sizeof(TYPE)); \
     assert(arr->data != NULL && "realloc to expand dynamic array failed"); \
   } \
-  arr->data[arr->length] = push_value; \
   arr->length++; \
+  return &arr->data[arr->length-1]; \
+} \
+ \
+void ARRAY_NAME##_push(ARRAY_NAME *arr, TYPE push_value) { \
+  TYPE *pushed = ARRAY_NAME##_alloc(arr); \
+  *pushed = push_value; \
 } \
  \
 TYPE ARRAY_NAME##_pop(ARRAY_NAME *arr) { \

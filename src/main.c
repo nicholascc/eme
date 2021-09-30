@@ -13,18 +13,29 @@
 
 
 int main(void) {
-  st_init(); // init symbol table
+  st_init();
   init_file_array();
+
   char *contents = add_file("./examples/test.eme");
   printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
   Lexer lexer = new_lexer(contents, 0);
-  Ast ast = parse_file(&lexer);
+  Ast *ast = parse_file(&lexer);
   if(should_exit_after_parsing) {
     printf("An error occurred during parsing, exiting.\n");
     exit(1);
   }
+
   printf("Parsed result:\n\n");
-  print_ast(ast);
-  printf("\n");
+  print_ast(*ast);
+  printf("\n\n");
+  infer_types_of_ast(ast);
+
+  if(should_exit_after_type_inference) {
+    printf("An error occurred during type inference, exiting.\n");
+    exit(1);
+  }
+
+  printf("Done with no errors!\n");
+
   return 0;
 }

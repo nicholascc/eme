@@ -7,6 +7,8 @@
 #include "c-utils/darray.h"
 
 typedef enum Type_Info_Type {
+  TYPE_UNKNOWN, // type has not yet been inferred
+
   TYPE_UINT,
   TYPE_INT,
   TYPE_S8,
@@ -29,6 +31,8 @@ typedef struct Type_Info {
   Type_Info_Type type;
   int dereference_count;
   union {
+    struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_U32, 0, {0}}
+    s64 unknown_int;
     // let's not do structs yet.
     struct {
       Type_Info *element_type;
@@ -36,10 +40,10 @@ typedef struct Type_Info {
   } data;
 } Type_Info;
 
+Type_Info UNKNOWN_TYPE_INFO;
+
 typedef enum Ast_Node_Type {
   NODE_NULL,
-  NODE_DECL,
-  NODE_DECL_WITH_SET,
   NODE_LITERAL,
   NODE_BINARY_OP,
   NODE_UNARY_OP,
@@ -47,6 +51,12 @@ typedef enum Ast_Node_Type {
   NODE_FUNCTION_CALL,
   NODE_SYMBOL,
   NODE_BLOCK,
+
+  NODE_PRIMITIVE_TYPE,
+
+  NODE_TYPED_DECL,
+  NODE_UNTYPED_DECL_SET,
+  NODE_TYPED_DECL_SET,
   NODE_FUNCTION_DEFINITION,
   NODE_RETURN
 } Ast_Node_Type;
@@ -79,31 +89,28 @@ typedef enum Ast_Unary_Operator {
 } Ast_Unary_Operator;
 
 typedef struct Ast_Node Ast_Node;
-GENERATE_DARRAY_HEADER(Ast_Node, Ast_Node_Array);
-
-typedef Ast_Node* Node_Ptr_Array_Entry; // following macro doesn't work with a direct pointer
-
-GENERATE_DARRAY_HEADER(Node_Ptr_Array_Entry, Node_Ptr_Array);
+GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
 typedef struct Scope_Entry {
   u64 symbol;
   Ast_Node *declaration;
-  Node_Ptr_Array references;
 } Scope_Entry;
 
-GENERATE_DARRAY_HEADER(Scope_Entry, Scope);
+GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
 
-typedef struct Linear_Ast_Unit {
-  Ast_Node *node;
-} Linear_Ast_Unit;
+typedef struct Scope Scope;
 
-GENERATE_DARRAY_HEADER(Linear_Ast_Unit, Linear_Ast_Unit_Array);
+typedef struct Scope {
+  bool is_global; // global scope has no parent
+  Scope *parent;
+  Scope_Entry_Array entries;
+} Scope;
+
 
 typedef struct Ast {
-  Linear_Ast_Unit_Array linear_ast_units;
+  Ast_Node_Ptr_Array linear_ast_units;
   Scope scope;
 } Ast;
-
 
 
 typedef struct Ast_Node {
@@ -136,27 +143,31 @@ typedef struct Ast_Node {
     } ternary_if;
 
     struct {
-      Ast_Node *function;
-      Ast_Node_Array arguments;
+      Ast_Node *identifier;
+      Ast_Node_Ptr_Array arguments;
     } function_call;
+
+    Type_Info_Type primitive_type; // can only be integer or unsigned integer types
 
     u64 symbol;
 
     struct {
       u64 symbol;
-      Ast_Node *type;
       Ast_Node *value;
-      bool has_type;
-    } decl_with_set;
+      Ast_Node *type;
+      Type_Info type_info;
+    } decl_set; // is represented by NODE_UNTYPED_DECL_SET or NODE_TYPED_DECL_SET;
+                // the former is used if the 'type' value is unset.
 
     struct {
       u64 symbol;
       Ast_Node *type;
-    } decl;
+      Type_Info type_info;
+    } decl; // is represented by NODE_TYPED_DECL
 
     struct {
       Scope scope;
-      Ast_Node_Array statements;
+      Ast_Node_Ptr_Array statements;
     } block;
 
     struct {
@@ -171,10 +182,14 @@ typedef struct Ast_Node {
   } data;
 } Ast_Node;
 
+
 void print_symbol(u64 symbol);
 void print_ast(Ast ast);
-void print_scope(Scope s);
-void print_ast_statement_array(Ast_Node_Array nodes);
+void print_scope(Scope *s);
+void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node node);
+char *type_info_to_string(Type_Info t);
+
+void error_at_ast_node(char *message, Ast_Node node);
 
 #endif /* end of include guard: AST_H */
