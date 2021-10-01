@@ -360,7 +360,7 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
   if(length == 4) {
     if(strncmp("uint", str) == 0)
       r.data.primitive_type = TYPE_UINT;
-    else error_at_token("The compiler expected a primitive type.", t, true);
+    else error_at_token("I expected a primitive type.", t, true);
 
   } else if(length == 3) {
     if(strncmp("int", str, 3) == 0)
@@ -377,15 +377,15 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
       r.data.primitive_type = TYPE_U32;
     else if(strncmp("u64", str, 3) == 0)
       r.data.primitive_type = TYPE_U64;
-    else error_at_token("The compiler expected a primitive type.", t, true);
+    else error_at_token("I expected a primitive type.", t, true);
 
   } else if(length == 2) {
     if(strncmp("s8", str) == 0)
       r.data.primitive_type = TYPE_S8;
     else if(strncmp("u8", str) == 0)
       r.data.primitive_type = TYPE_U8;
-    else error_at_token("The compiler expected a primitive type.", t, true);
-  } else error_at_token("The compiler expected a primitive type.", t, true);
+    else error_at_token("I expected a primitive type.", t, true);
+  } else error_at_token("I expected a primitive type.", t, true);
 
   return allocate_ast_node(r);
 }

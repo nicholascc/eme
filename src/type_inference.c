@@ -118,7 +118,7 @@ Type_Info solidify_type(Type_Info x, Ast_Node *node) {
   } else if(is_concrete_int(x.type))
     return x;
   else {
-    error_at_ast_node("The compiler doesn't know how to solidify this type.", *node);
+    error_at_ast_node("I don't know how to make this type concrete.", *node);
     exit(1);
   }
 }
@@ -298,13 +298,13 @@ Type_Info infer_types_of_block(Ast_Node *block) {
 
       case NODE_FUNCTION_DEFINITION:
       case NODE_NULL: {
-        error_at_ast_node("This is not allowed in a function definition.", *node);
+        error_at_ast_node("Null nodes or function definitions are not allowed in a function definition.", *node);
         exit(1);
       }
 
       case NODE_PRIMITIVE_TYPE:
       default: {
-        error_at_ast_node("Internal compiler error: The compiler cannot infer the type of this node.",
+        error_at_ast_node("Internal compiler error: I cannot infer the type of this node.",
                           *node);
         exit(1);
       }
