@@ -8,6 +8,7 @@ GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
 
 Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
+Type_Info NOTHING_TYPE_INFO = {TYPE_NOTHING, 0, {0}};
 
 void print_symbol(u64 symbol) {
   int length;
@@ -168,6 +169,7 @@ void print_ast_node(Ast_Node n) {
 char *type_info_to_string(Type_Info t) { // @Incomplete this should probably be better but strings are hard :(
   switch(t.type) {
     case TYPE_UNKNOWN:     return "unknown";
+    case TYPE_NOTHING:     return "nothing";
     case TYPE_UINT:        return "uint";
     case TYPE_INT:         return "int";
     case TYPE_S8:          return "s8";

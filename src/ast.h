@@ -8,6 +8,7 @@
 
 typedef enum Type_Info_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
+  TYPE_NOTHING,
 
   TYPE_UINT,
   TYPE_INT,
@@ -41,6 +42,7 @@ typedef struct Type_Info {
 } Type_Info;
 
 Type_Info UNKNOWN_TYPE_INFO;
+Type_Info NOTHING_TYPE_INFO;
 
 typedef enum Ast_Node_Type {
   NODE_NULL,

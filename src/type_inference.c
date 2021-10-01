@@ -238,7 +238,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
       exit(1);
     }
     case NODE_BLOCK: {
-      infer_types_of_block(n);
+      return infer_types_of_block(n);
       break;
     }
     default: {
@@ -250,6 +250,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
 
 Type_Info infer_types_of_block(Ast_Node *block) {
   assert(block->type == NODE_BLOCK);
+  Type_Info last_statement_type = NOTHING_TYPE_INFO;
   for(int i = 0; i < block->data.block.statements.length; i++) {
     Ast_Node *node = block->data.block.statements.data[i];
     switch(node->type) {
@@ -260,14 +261,14 @@ Type_Info infer_types_of_block(Ast_Node *block) {
       case NODE_FUNCTION_CALL:
       case NODE_SYMBOL:
       case NODE_BLOCK: {
-        infer_type_of_expr(node, &block->data.block.scope);
+        last_statement_type = infer_type_of_expr(node, &block->data.block.scope);
         break;
       }
 
       case NODE_TYPED_DECL:
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {
-        infer_type_info_of_decl_or_decl_set(node, &block->data.block.scope);
+        last_statement_type = infer_type_info_of_decl_or_decl_set(node, &block->data.block.scope);
         break;
       }
 
@@ -289,6 +290,7 @@ Type_Info infer_types_of_block(Ast_Node *block) {
       }
     }
   }
+  return last_statement_type;
 }
 
 void infer_types_of_ast(Ast *ast) {
