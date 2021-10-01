@@ -30,7 +30,7 @@ typedef struct Type_Info Type_Info;
 
 typedef struct Type_Info {
   Type_Info_Type type;
-  int dereference_count;
+  int reference_count;
   union {
     struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_U32, 0, {0}}
     s64 unknown_int;

@@ -105,7 +105,23 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
   return false;
 }
 
-
+Type_Info solidify_type(Type_Info x, Ast_Node *node) {
+  if(is_unknown_int(x.type)) {
+    Type_Info r;
+    r.reference_count = 0;
+    // @Incomplete is this really the behavior we want?
+    if(s64_abs(x.data.unknown_int) < power_of_two(31))
+      r.type = TYPE_S32;
+    else
+      r.type = TYPE_S64;
+    return r;
+  } else if(is_concrete_int(x.type))
+    return x;
+  else {
+    error_at_ast_node("The compiler doesn't know how to solidify this type.", *node);
+    exit(1);
+  }
+}
 
 
 
@@ -128,7 +144,7 @@ Type_Info type_info_of_type_expr(Ast_Node *type_node) {
   }
   Type_Info given_type;
   given_type.type = type_node->data.primitive_type;
-  given_type.type = 0;
+  given_type.reference_count = 0;
   return given_type;
 }
 
@@ -151,12 +167,14 @@ Type_Info infer_type_info_of_decl_set(Ast_Node *decl, Scope *scope) {
   if(decl->type == NODE_TYPED_DECL_SET) {
     Type_Info given_type = type_info_of_type_expr(decl->data.decl_set.type);
     if(can_implicitly_cast(inferred_type, given_type)) {
-      error_cannot_implicitly_cast(inferred_type, given_type, *decl);
       decl->data.decl_set.type_info = given_type;
       return given_type;
+    } else {
+      error_cannot_implicitly_cast(inferred_type, given_type, *decl);
+      inferred_type = given_type;
     }
   }
-  decl->data.decl_set.type_info = inferred_type;
+  decl->data.decl_set.type_info = solidify_type(inferred_type, decl);
   return inferred_type;
 }
 
@@ -168,22 +186,36 @@ Type_Info infer_type_info_of_decl_or_decl_set(Ast_Node *decl, Scope *scope) {
           decl->type == NODE_UNTYPED_DECL_SET)
     return infer_type_info_of_decl_set(decl, scope);
   else {
-    print_ast_node(*decl);
-    assert(false);
+    error_at_ast_node("Internal compiler error: This is not a decl or decl_set.", *decl);
+    exit(1);
   }
 }
 
-// Return value indicates success or failure;
-// the result is stored in scope_entry.
-bool get_scope_entry_of_symbol(u64 symbol, Scope *scope, Scope_Entry *scope_entry) {
-  for(int i = 0; i < scope->entries.length; i++) {
-    Scope_Entry e = scope->entries.data[i];
-    if(e.symbol == symbol) {
-      *scope_entry = e;
-      return true;
+
+Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
+  while(true) {
+    for(int i = 0; i < scope->entries.length; i++) {
+      Scope_Entry e = scope->entries.data[i];
+      if(e.symbol == symbol) {
+        if(scope->is_global)
+          return infer_type_info_of_decl_or_decl_set(e.declaration, scope);
+        else {
+          Ast_Node *decl = e.declaration;
+          if(decl->type == NODE_TYPED_DECL && decl->data.decl.type_info.type != TYPE_UNKNOWN)
+            return decl->data.decl.type_info;
+          else if((decl->type == NODE_TYPED_DECL_SET || decl->type == NODE_UNTYPED_DECL_SET)
+                  && decl->data.decl_set.type_info.type != TYPE_UNKNOWN)
+            return decl->data.decl_set.type_info;
+        }
+      }
     }
+
+    if(scope->is_global)
+      break;
+    else scope = scope->parent;
   }
-  return false;
+  error_at_ast_node("This variable is undefined in this scope.", *node);
+  exit(1);
 }
 
 Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
@@ -209,7 +241,11 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
             error_at_ast_node("Cannot use a set statement in the global scope.", *n);
             should_exit_after_type_inference = true;
           }
-          return infer_type_of_expr(n->data.binary_op.second, scope);
+          Type_Info left = infer_type_of_expr(n->data.binary_op.first, scope);
+          Type_Info right = infer_type_of_expr(n->data.binary_op.second, scope);
+          if(can_implicitly_cast(right, left)) return left;
+          error_cannot_implicitly_cast(right, left, *n);
+          exit(1);
         }
 
         default:
@@ -219,23 +255,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
       break;
     }
     case NODE_SYMBOL: {
-      for(int i = 0; i < scope->entries.length; i++) {
-        Scope_Entry e = scope->entries.data[i];
-        if(e.symbol == n->data.symbol) {
-          if(scope->is_global)
-            return infer_type_info_of_decl_or_decl_set(e.declaration, scope);
-          else {
-            Ast_Node *decl = e.declaration;
-            if(decl->type == NODE_TYPED_DECL && decl->data.decl.type_info.type != TYPE_UNKNOWN)
-              return decl->data.decl.type_info;
-            else if((decl->type == NODE_TYPED_DECL_SET || decl->type == NODE_UNTYPED_DECL_SET)
-                    && decl->data.decl_set.type_info.type != TYPE_UNKNOWN)
-              return decl->data.decl_set.type_info;
-          }
-        }
-      }
-      error_at_ast_node("This variable is undefined in this scope.", *n);
-      exit(1);
+      return get_type_of_identifier_in_scope(n->data.symbol, scope, n);
     }
     case NODE_BLOCK: {
       return infer_types_of_block(n);
@@ -284,7 +304,7 @@ Type_Info infer_types_of_block(Ast_Node *block) {
 
       case NODE_PRIMITIVE_TYPE:
       default: {
-        error_at_ast_node("(internal compiler error) cannot type infer this node",
+        error_at_ast_node("Internal compiler error: The compiler cannot infer the type of this node.",
                           *node);
         exit(1);
       }
@@ -316,7 +336,7 @@ void infer_types_of_ast(Ast *ast) {
         break;
       }
       default:
-        error_at_ast_node("(internal compiler error) node referred to by scope entry is not a declaration",
+        error_at_ast_node("Internal compiler error: This node referred to by a scope entry is not a declaration",
                           *decl);
         exit(1);
     }

@@ -187,6 +187,5 @@ char *type_info_to_string(Type_Info t) { // @Incomplete this should probably be 
 }
 
 void error_at_ast_node(char *message, Ast_Node n) {
-  print_ast_node(n);
   print_error_message(message, n.file_id, n.line, n.character);
 }
