@@ -53,6 +53,7 @@ int integer_width(Type_Info_Type t) {
     case TYPE_S32: return 32;
     case TYPE_U64:
     case TYPE_S64: return 64;
+    default: assert(false);
   }
 }
 
@@ -129,9 +130,12 @@ Type_Info solidify_type(Type_Info x, Ast_Node *node) {
 
 
 
-void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node) {
+void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way) {
   char message[1024];
-  sprintf(message, "You cannot implicity perform the cast %s -> %s.", type_info_to_string(a), type_info_to_string(b));
+  if(cast_either_way)
+    sprintf(message, "I cannot implicitly cast %s -> %s or vice versa.", type_info_to_string(a), type_info_to_string(b));
+  else
+    sprintf(message, "I cannot implicity cast %s -> %s.", type_info_to_string(a), type_info_to_string(b));
   error_at_ast_node(message, node);
   should_exit_after_type_inference = true;
 }
@@ -170,7 +174,7 @@ Type_Info infer_type_info_of_decl_set(Ast_Node *decl, Scope *scope) {
       decl->data.decl_set.type_info = given_type;
       return given_type;
     } else {
-      error_cannot_implicitly_cast(inferred_type, given_type, *decl);
+      error_cannot_implicitly_cast(inferred_type, given_type, *decl, false);
       inferred_type = given_type;
     }
   }
@@ -232,7 +236,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
           Type_Info second = infer_type_of_expr(n->data.binary_op.second, scope);
           if(can_implicitly_cast(first, second)) return second;
           if(can_implicitly_cast(second, first)) return first;
-          error_cannot_implicitly_cast(second, first, *n);
+          error_cannot_implicitly_cast(second, first, *n, true);
           return first;
         }
 
@@ -244,7 +248,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
           Type_Info left = infer_type_of_expr(n->data.binary_op.first, scope);
           Type_Info right = infer_type_of_expr(n->data.binary_op.second, scope);
           if(can_implicitly_cast(right, left)) return left;
-          error_cannot_implicitly_cast(right, left, *n);
+          error_cannot_implicitly_cast(right, left, *n, false);
           exit(1);
         }
 

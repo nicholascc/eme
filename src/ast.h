@@ -187,7 +187,7 @@ typedef struct Ast_Node {
 
 void print_symbol(u64 symbol);
 void print_ast(Ast ast);
-void print_scope(Scope *s);
+void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node node);
 char *type_info_to_string(Type_Info t);
