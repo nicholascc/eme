@@ -132,15 +132,15 @@ void print_ast_node(Ast_Node n) {
 
     case NODE_TYPED_DECL_SET:
     case NODE_UNTYPED_DECL_SET:
-      print_symbol(n.data.decl_set.symbol);
+      print_symbol(n.data.decl.symbol);
       if(n.type == NODE_TYPED_DECL_SET) {
         printf(": ");
-        print_ast_node(*n.data.decl_set.type);
+        print_ast_node(*n.data.decl.type);
         printf(" = ");
       } else {
         printf(" := ");
       }
-      print_ast_node(*n.data.decl_set.value);
+      print_ast_node(*n.data.decl.value);
       break;
 
     case NODE_TYPED_DECL:

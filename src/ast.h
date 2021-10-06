@@ -169,14 +169,8 @@ typedef struct Ast_Node {
       Ast_Node *value;
       Ast_Node *type;
       Type_Info type_info;
-    } decl_set; // is represented by NODE_UNTYPED_DECL_SET or NODE_TYPED_DECL_SET;
-                // the former is used if the 'type' value is unset.
-
-    struct {
-      u64 symbol;
-      Ast_Node *type;
-      Type_Info type_info;
-    } decl; // is represented by NODE_TYPED_DECL
+    } decl; // is the representation of NODE_TYPED_DECL, NODE_UNTYPED_DECL_SET, or NODE_TYPED_DECL_SET
+            // these determine which fields here are set or unset
 
     struct {
       Scope scope;

@@ -436,9 +436,9 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
     result.character = colon.character;
     result.file_id = colon.file_id;
     result.type = NODE_UNTYPED_DECL_SET;
-    result.data.decl_set.symbol = id.data.symbol;
-    result.data.decl_set.value = value_ast;
-    result.data.decl_set.type_info = UNKNOWN_TYPE_INFO;
+    result.data.decl.symbol = id.data.symbol;
+    result.data.decl.value = value_ast;
+    result.data.decl.type_info = UNKNOWN_TYPE_INFO;
     return allocate_ast_node(result);
   } else {
     revert_state(l);
@@ -464,10 +464,10 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
       result.character = colon.character;
       result.file_id = colon.file_id;
       result.type = NODE_TYPED_DECL_SET;
-      result.data.decl_set.symbol = id.data.symbol;
-      result.data.decl_set.type = type_ast;
-      result.data.decl_set.value = value_ast;
-      result.data.decl_set.type_info = UNKNOWN_TYPE_INFO;
+      result.data.decl.symbol = id.data.symbol;
+      result.data.decl.type = type_ast;
+      result.data.decl.value = value_ast;
+      result.data.decl.type_info = UNKNOWN_TYPE_INFO;
       return allocate_ast_node(result);
     } else {
       error_unexpected_token(equals);
@@ -502,9 +502,9 @@ Ast *parse_file(Lexer *l) {
        node->type == NODE_FUNCTION_DEFINITION) {
       Scope_Entry e;
       switch(node->type) {
-        case NODE_TYPED_DECL: e.symbol = node->data.decl.symbol; break;
+        case NODE_TYPED_DECL:
         case NODE_TYPED_DECL_SET:
-        case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl_set.symbol; break;
+        case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl.symbol; break;
         case NODE_FUNCTION_DEFINITION: e.symbol = node->data.function_definition.symbol; break;
       }
       e.declaration.unit = unit;
@@ -547,9 +547,9 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
        node->type == NODE_UNTYPED_DECL_SET) {
       Scope_Entry e;
       switch(node->type) {
-        case NODE_TYPED_DECL: e.symbol = node->data.decl.symbol; break;
+        case NODE_TYPED_DECL:
         case NODE_TYPED_DECL_SET:
-        case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl_set.symbol; break;
+        case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl.symbol; break;
       }
       e.declaration.node = node;
       Scope_Entry_Array_push(&scope->entries, e);
