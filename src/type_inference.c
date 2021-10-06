@@ -196,6 +196,10 @@ Type_Info infer_type_info_of_decl_or_decl_set(Ast_Node *decl, Scope *scope) {
 }
 
 Type_Info infer_type_info_of_decl_or_decl_set_unit(Compilation_Unit *unit, Scope *scope) {
+  if(unit->seen_in_type_inference && !unit->type_inferred) {
+    error_at_ast_node("I found a circular dependency at this node.", *unit->node);
+    exit(1);
+  }
   unit->seen_in_type_inference = true;
   Type_Info r = infer_type_info_of_decl_or_decl_set(unit->node, scope);
   unit->type_inferred = true;
@@ -337,11 +341,7 @@ void infer_types_of_ast(Ast *ast) {
     unit->seen_in_type_inference = true;
     Ast_Node *decl = unit->node;
     switch(decl->type) {
-      case NODE_UNTYPED_DECL_SET: {
-        error_at_ast_node("Declarations in the global scope must have a type.", *decl);
-        should_exit_after_type_inference = true;
-        continue;
-      }
+      case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {
         if(decl->data.decl_set.type_info.type == TYPE_UNKNOWN)
           infer_type_info_of_decl_set(decl, &ast->scope);
