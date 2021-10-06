@@ -10,6 +10,7 @@
 #include "files.h"
 #include "error.h"
 #include "type_inference.h"
+#include "code_generation.h"
 
 
 int main(void) {
@@ -35,7 +36,9 @@ int main(void) {
     exit(1);
   }
 
-  printf("Done with no errors!\n");
+  FILE *out = fopen("out/out.c", "w+");
+  ast_to_c(*ast, out);
+  fclose(out);
 
   return 0;
 }
