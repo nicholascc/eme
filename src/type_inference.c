@@ -195,28 +195,40 @@ Type_Info infer_type_info_of_decl_or_decl_set(Ast_Node *decl, Scope *scope) {
   }
 }
 
+Type_Info infer_type_info_of_decl_or_decl_set_unit(Compilation_Unit *unit, Scope *scope) {
+  unit->seen_in_type_inference = true;
+  Type_Info r = infer_type_info_of_decl_or_decl_set(unit->node, scope);
+  unit->type_inferred = true;
+  return r;
+}
+
 
 Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
   while(true) {
     for(int i = 0; i < scope->entries.length; i++) {
       Scope_Entry e = scope->entries.data[i];
       if(e.symbol == symbol) {
-        if(scope->is_global)
-          return infer_type_info_of_decl_or_decl_set(e.declaration, scope);
+        if(!scope->is_ordered)
+          return infer_type_info_of_decl_or_decl_set_unit(e.declaration.unit, scope);
         else {
-          Ast_Node *decl = e.declaration;
-          if(decl->type == NODE_TYPED_DECL && decl->data.decl.type_info.type != TYPE_UNKNOWN)
-            return decl->data.decl.type_info;
-          else if((decl->type == NODE_TYPED_DECL_SET || decl->type == NODE_UNTYPED_DECL_SET)
-                  && decl->data.decl_set.type_info.type != TYPE_UNKNOWN)
-            return decl->data.decl_set.type_info;
+          Ast_Node n = *e.declaration.node;
+          if(n.type == NODE_TYPED_DECL) {
+            assert(n.data.decl.type_info.type != TYPE_UNKNOWN);
+            return n.data.decl.type_info;
+          } else if(n.type == NODE_TYPED_DECL_SET || n.type == NODE_UNTYPED_DECL_SET) {
+            assert(n.data.decl_set.type_info.type != TYPE_UNKNOWN);
+            return n.data.decl_set.type_info;
+          }
+          error_at_ast_node("(Internal Compiler Error): Node referenced in local scope is not a declaration.", *node);
+          exit(1);
         }
       }
     }
 
-    if(scope->is_global)
+    if(scope->has_parent)
+      scope = scope->parent;
+    else
       break;
-    else scope = scope->parent;
   }
   error_at_ast_node("This variable is undefined in this scope.", *node);
   exit(1);
@@ -241,8 +253,8 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
         }
 
         case OPSET_EQUALS: {
-          if(scope->is_global) {
-            error_at_ast_node("Cannot use a set statement in the global scope.", *n);
+          if(!scope->is_ordered) {
+            error_at_ast_node("You cannot use a set statement outside of a block.", *n);
             should_exit_after_type_inference = true;
           }
           Type_Info left = infer_type_of_expr(n->data.binary_op.first, scope);
@@ -253,7 +265,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
         }
 
         default:
-          error_at_ast_node("Cannot infer the type of this expression yet.", *n);
+          error_at_ast_node("I cannot infer the type of this expression yet.", *n);
           exit(1);
       }
       break;
@@ -266,7 +278,7 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
       break;
     }
     default: {
-      error_at_ast_node("Cannot infer the type of this expression yet.", *n);
+      error_at_ast_node("I cannot infer the type of this expression yet.", *n);
       exit(1);
     }
   }
@@ -318,9 +330,12 @@ Type_Info infer_types_of_block(Ast_Node *block) {
 }
 
 void infer_types_of_ast(Ast *ast) {
+  assert(!ast->scope.is_ordered && !ast->scope.has_parent);
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
-    Ast_Node *decl = entry.declaration;
+    Compilation_Unit *unit = entry.declaration.unit;
+    unit->seen_in_type_inference = true;
+    Ast_Node *decl = unit->node;
     switch(decl->type) {
       case NODE_UNTYPED_DECL_SET: {
         error_at_ast_node("Declarations in the global scope must have a type.", *decl);
@@ -344,5 +359,6 @@ void infer_types_of_ast(Ast *ast) {
                           *decl);
         exit(1);
     }
+    unit->type_inferred = true;
   }
 }

@@ -93,9 +93,20 @@ typedef enum Ast_Unary_Operator {
 typedef struct Ast_Node Ast_Node;
 GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
+typedef struct Compilation_Unit {
+  bool type_inferred;
+  bool seen_in_type_inference;
+  Ast_Node *node;
+} Compilation_Unit;
+
+GENERATE_DARRAY_HEADER(Compilation_Unit *, Compilation_Unit_Ptr_Array);
+
 typedef struct Scope_Entry {
   u64 symbol;
-  Ast_Node *declaration;
+  union {
+    Ast_Node *node;
+    Compilation_Unit *unit;
+  } declaration;
 } Scope_Entry;
 
 GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
@@ -103,14 +114,14 @@ GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
 typedef struct Scope Scope;
 
 typedef struct Scope {
-  bool is_global; // global scope has no parent
+  bool is_ordered;
+  bool has_parent;
   Scope *parent;
   Scope_Entry_Array entries;
 } Scope;
 
-
 typedef struct Ast {
-  Ast_Node_Ptr_Array linear_ast_units;
+  Compilation_Unit_Ptr_Array compilation_units;
   Scope scope;
 } Ast;
 
@@ -184,6 +195,10 @@ typedef struct Ast_Node {
   } data;
 } Ast_Node;
 
+Ast_Node *allocate_null_ast_node();
+Ast_Node *allocate_ast_node(Ast_Node node);
+Compilation_Unit *allocate_null_compilation_unit();
+Compilation_Unit *allocate_compilation_unit(Compilation_Unit unit);
 
 void print_symbol(u64 symbol);
 void print_ast(Ast ast);

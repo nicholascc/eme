@@ -9,17 +9,6 @@
 #include "error.h"
 #include "symbol_table.h"
 
-Ast_Node *allocate_null_ast_node() {
-  Ast_Node *result = malloc(sizeof(Ast_Node));
-  result->type = NODE_NULL;
-  return result;
-}
-
-Ast_Node *allocate_ast_node(Ast_Node node) {
-  Ast_Node *result = malloc(sizeof(Ast_Node));
-  *result = node;
-  return result;
-}
 
 
 void error_at_token(char *message, Token t, bool should_exit_now) {
@@ -488,8 +477,9 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
 
 Ast *parse_file(Lexer *l) {
   Ast *result = malloc(sizeof(Ast));
-  result->linear_ast_units = init_Ast_Node_Ptr_Array(32);
-  result->scope.is_global = true;
+  result->compilation_units = init_Compilation_Unit_Ptr_Array(32);
+  result->scope.is_ordered = false;
+  result->scope.has_parent = false;
   result->scope.entries = init_Scope_Entry_Array(2);
 
   while(1) {
@@ -500,7 +490,11 @@ Ast *parse_file(Lexer *l) {
       return result;
 
     Ast_Node *node = parse_any_statement(l, &result->scope);
-    Ast_Node_Ptr_Array_push(&result->linear_ast_units, node);
+    Compilation_Unit *unit = allocate_null_compilation_unit();
+    unit->type_inferred = false;
+    unit->seen_in_type_inference = false;
+    unit->node = node;
+    Compilation_Unit_Ptr_Array_push(&result->compilation_units, unit);
 
     if(node->type == NODE_TYPED_DECL ||
        node->type == NODE_TYPED_DECL_SET ||
@@ -513,8 +507,7 @@ Ast *parse_file(Lexer *l) {
         case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl_set.symbol; break;
         case NODE_FUNCTION_DEFINITION: e.symbol = node->data.function_definition.symbol; break;
       }
-      e.declaration = node;
-      assert(e.declaration->line == node->line); // @Cleanup using this for development of scope feature
+      e.declaration.unit = unit;
       Scope_Entry_Array_push(&result->scope.entries, e);
     }
   }
@@ -532,7 +525,8 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
   Ast_Node_Ptr_Array *statements = &result->data.block.statements;
   *statements = init_Ast_Node_Ptr_Array(2);
   Scope *scope = &result->data.block.scope;
-  scope->is_global = false;
+  scope->is_ordered = true;
+  scope->has_parent = true;
   scope->parent = parent_scope;
   scope->entries = init_Scope_Entry_Array(2);
 
@@ -557,8 +551,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
         case NODE_TYPED_DECL_SET:
         case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl_set.symbol; break;
       }
-      e.declaration = node;
-      assert(e.declaration->line == node->line); // @Cleanup using this for development of scope feature
+      e.declaration.node = node;
       Scope_Entry_Array_push(&scope->entries, e);
     } else if(node->type == NODE_FUNCTION_DEFINITION) {
       print_error_message("Function definitions are only allowed in the global scope.", node->file_id, node->line, node->character);

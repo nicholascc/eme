@@ -6,9 +6,34 @@
 
 GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
+GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 
 Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
 Type_Info NOTHING_TYPE_INFO = {TYPE_NOTHING, 0, {0}};
+
+
+Ast_Node *allocate_null_ast_node() {
+  Ast_Node *result = malloc(sizeof(Ast_Node));
+  result->type = NODE_NULL;
+  return result;
+}
+
+Ast_Node *allocate_ast_node(Ast_Node node) {
+  Ast_Node *result = malloc(sizeof(Ast_Node));
+  *result = node;
+  return result;
+}
+
+Compilation_Unit *allocate_null_compilation_unit() {
+  return malloc(sizeof(Compilation_Unit));
+}
+
+Compilation_Unit *allocate_compilation_unit(Compilation_Unit unit) {
+  Compilation_Unit *result = malloc(sizeof(Compilation_Unit));
+  *result = unit;
+  return result;
+}
+
 
 void print_symbol(u64 symbol) {
   int length;
@@ -18,23 +43,9 @@ void print_symbol(u64 symbol) {
   }
 }
 
-void print_scope(Scope s) {
-  printf("[\n");
-  for(int i = 0; i < s.entries.length; i++) {
-    Scope_Entry e = s.entries.data[i];
-    print_symbol(e.symbol);
-    printf("\n");
-    printf("  [decl: ");
-    print_ast_node(*e.declaration);
-    printf("]\n");
-  }
-  printf("]\n");
-}
-
 void print_ast(Ast ast) {
-  print_scope(ast.scope);
-  for(int i = 0; i < ast.linear_ast_units.length; i++) {
-    print_ast_node(*ast.linear_ast_units.data[i]);
+  for(int i = 0; i < ast.compilation_units.length; i++) {
+    print_ast_node(*ast.compilation_units.data[i]->node);
     printf("\n\n");
   }
 }
@@ -153,7 +164,6 @@ void print_ast_node(Ast_Node n) {
 
     case NODE_BLOCK:
       printf("{\n");
-      print_scope(n.data.block.scope);
       print_ast_statement_array(n.data.block.statements);
       printf("}");
       break;
