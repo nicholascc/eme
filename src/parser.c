@@ -346,35 +346,53 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
   r.character = t.character;
   r.file_id = t.file_id;
   r.type = NODE_PRIMITIVE_TYPE;
+  bool is_signed;
+  u8 width;
   if(length == 4) {
-    if(strncmp("uint", str) == 0)
-      r.data.primitive_type = TYPE_UINT;
+    if(strncmp("uint", str) == 0) {
+      is_signed = false;
+      width = 64;
+    }
     else error_at_token("I expected a primitive type.", t, true);
 
   } else if(length == 3) {
-    if(strncmp("int", str, 3) == 0)
-      r.data.primitive_type = TYPE_INT;
-    else if(strncmp("s16", str, 3) == 0)
-      r.data.primitive_type = TYPE_S16;
-    else if(strncmp("s32", str, 3) == 0)
-      r.data.primitive_type = TYPE_S32;
-    else if(strncmp("s64", str, 3) == 0)
-      r.data.primitive_type = TYPE_S64;
-    else if(strncmp("u16", str, 3) == 0)
-      r.data.primitive_type = TYPE_U16;
-    else if(strncmp("u32", str, 3) == 0)
-      r.data.primitive_type = TYPE_U32;
-    else if(strncmp("u64", str, 3) == 0)
-      r.data.primitive_type = TYPE_U64;
-    else error_at_token("I expected a primitive type.", t, true);
+    if(strncmp("int", str, 3) == 0) {
+      is_signed = true;
+      width = 64;
+    } else if(strncmp("s16", str, 3) == 0) {
+      is_signed = true;
+      width = 16;
+    } else if(strncmp("s32", str, 3) == 0) {
+      is_signed = true;
+      width = 32;
+    } else if(strncmp("s64", str, 3) == 0) {
+      is_signed = true;
+      width = 64;
+    } else if(strncmp("u16", str, 3) == 0) {
+      is_signed = false;
+      width = 16;
+    } else if(strncmp("u32", str, 3) == 0) {
+      is_signed = false;
+      width = 32;
+    } else if(strncmp("u64", str, 3) == 0) {
+      is_signed = false;
+      width = 64;
+    } else error_at_token("I expected a primitive type.", t, true);
 
   } else if(length == 2) {
-    if(strncmp("s8", str) == 0)
-      r.data.primitive_type = TYPE_S8;
-    else if(strncmp("u8", str) == 0)
-      r.data.primitive_type = TYPE_U8;
+    if(strncmp("s8", str) == 0) {
+      is_signed = true;
+      width = 8;
+    } else if(strncmp("u8", str) == 0) {
+      is_signed = false;
+      width = 8;
+    }
     else error_at_token("I expected a primitive type.", t, true);
   } else error_at_token("I expected a primitive type.", t, true);
+
+  r.data.primitive_type.type = TYPE_INT;
+  r.data.primitive_type.data.integer.is_signed = is_signed;
+  r.data.primitive_type.data.integer.width = width;
 
   return allocate_ast_node(r);
 }

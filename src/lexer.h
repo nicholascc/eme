@@ -72,7 +72,7 @@ typedef struct Token {
 
   union {
     u64 symbol;
-    int  literal_int;
+    int literal_int;
     bool literal_bool;
     char *literal_string;
   } data;

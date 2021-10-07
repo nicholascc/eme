@@ -5,58 +5,6 @@
 #include "ast.h"
 #include "error.h"
 
-bool is_unknown_int(Type_Info_Type t) {
-  return t == TYPE_UNKNOWN_INT;
-}
-
-bool is_signed_int(Type_Info_Type t) {
-  switch(t) {
-    case TYPE_INT:
-    case TYPE_S8:
-    case TYPE_S16:
-    case TYPE_S32:
-    case TYPE_S64:
-      return true;
-  }
-  return false;
-}
-
-bool is_unsigned_int(Type_Info_Type t) {
-  switch(t) {
-    case TYPE_UINT:
-    case TYPE_U8:
-    case TYPE_U16:
-    case TYPE_U32:
-    case TYPE_U64:
-      return true;
-  }
-  return false;
-}
-
-bool is_concrete_int(Type_Info_Type t) {
-  return is_signed_int(t) || is_unsigned_int(t);
-}
-
-bool is_any_int(Type_Info_Type t) {
-  return is_concrete_int(t) || is_unknown_int(t);
-}
-
-int integer_width(Type_Info_Type t) {
-  switch(t) {
-    case TYPE_UINT:
-    case TYPE_INT: assert(false);
-    case TYPE_U8:
-    case TYPE_S8: return 8;
-    case TYPE_U16:
-    case TYPE_S16: return 16;
-    case TYPE_U32:
-    case TYPE_S32: return 32;
-    case TYPE_U64:
-    case TYPE_S64: return 64;
-    default: assert(false);
-  }
-}
-
 s64 power_of_two(int n) {
   return ((s64)1) << ((s64) n);
 }
@@ -67,56 +15,45 @@ s64 s64_abs(s64 x) {
 
 bool can_implicitly_cast(Type_Info before, Type_Info after) {
   printf("TESTING CAST, types %s -> %s\n", type_info_to_string(before), type_info_to_string(after));
-  if(is_concrete_int(before.type) && is_concrete_int(after.type)) {
-    if(before.type == after.type)
+  if(before.type == TYPE_INT && after.type == TYPE_INT) {
+    if(before.data.integer.width == after.data.integer.width &&
+       before.data.integer.is_signed == after.data.integer.is_signed)
       return true;
-    else if(is_signed_int(before.type) && is_unsigned_int(after.type))
+    else if(before.data.integer.is_signed && !after.data.integer.is_signed)
       return false;
-    else if(integer_width(before.type) >= integer_width(after.type))
+    else if(before.data.integer.width >= after.data.integer.width)
       return false;
     else
       return true;
 
-  } else if(is_unknown_int(before.type) && is_concrete_int(after.type)) {
-    // Can depromote this unknown integer?
+  } else if(before.type == TYPE_UNKNOWN_INT && after.type == TYPE_INT) {
     s64 literal = before.data.unknown_int;
-    if(is_unsigned_int(after.type)) {
+    if(!after.data.integer.is_signed) {
       if(literal < 0) return false;
-      switch(after.type) {
-        case TYPE_UINT: assert(false && "Not handling uints yet. Maybe get rid of them?");
-        case TYPE_U8: return literal < power_of_two(8);
-        case TYPE_U16: return literal < power_of_two(16);
-        case TYPE_U32: return literal < power_of_two(32);
-        case TYPE_U64: return true;
-      }
+      if(after.data.integer.width == 64) return true;
+      return literal < power_of_two(after.data.integer.width);
     } else {
-      switch(after.type) {
-        case TYPE_INT: assert(false && "Not handling ints yet. Maybe get rid of them?");
-        case TYPE_S8:  return s64_abs(literal) < power_of_two(7);
-        case TYPE_S16: return s64_abs(literal) < power_of_two(15);
-        case TYPE_S32: return s64_abs(literal) < power_of_two(31);
-        case TYPE_S64: return true;
-      }
+      if(after.data.integer.width == 64) return true;
+      return s64_abs(literal) < power_of_two(after.data.integer.width-1);
     }
 
     return true;
-  } else if(is_unknown_int(before.type) && is_unknown_int(after.type)) {
-    return true;
+  } else if(before.type == TYPE_UNKNOWN_INT && after.type == TYPE_UNKNOWN_INT) {
+    print_error_message("Internal compiler error: Cannot implicitly cast a literal integer to a literal integer.", -1, -1, -1);
+    exit(1);
   }
   return false;
 }
 
 Type_Info solidify_type(Type_Info x, Ast_Node *node) {
-  if(is_unknown_int(x.type)) {
+  if(x.type == TYPE_UNKNOWN_INT) {
     Type_Info r;
+    r.type = TYPE_INT;
     r.reference_count = 0;
-    // @Incomplete is this really the behavior we want?
-    if(s64_abs(x.data.unknown_int) < power_of_two(31))
-      r.type = TYPE_S32;
-    else
-      r.type = TYPE_S64;
+    r.data.integer.is_signed = true;
+    r.data.integer.width = 64;
     return r;
-  } else if(is_concrete_int(x.type))
+  } else if(x.type == TYPE_INT)
     return x;
   else {
     error_at_ast_node("I don't know how to make this type concrete.", *node);
@@ -146,17 +83,14 @@ Type_Info type_info_of_type_expr(Ast_Node *type_node) {
                       *type_node);
     exit(1);
   }
-  Type_Info given_type;
-  given_type.type = type_node->data.primitive_type;
-  given_type.reference_count = 0;
-  return given_type;
+  return type_node->data.primitive_type;
 }
 
 Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
   if(decl->data.decl.type_info.type != TYPE_UNKNOWN) return decl->data.decl.type_info;
 
   if(decl->type == NODE_TYPED_DECL) {
-    decl->data.decl.type_info = type_info_of_type_expr(decl->data.decl.type);;
+    decl->data.decl.type_info = type_info_of_type_expr(decl->data.decl.type);
     return decl->data.decl.type_info;
   } else if(decl->type == NODE_TYPED_DECL_SET || decl->type == NODE_UNTYPED_DECL_SET) {
 
@@ -207,7 +141,7 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
             assert(n.data.decl.type_info.type != TYPE_UNKNOWN);
             return n.data.decl.type_info;
           }
-          error_at_ast_node("(Internal Compiler Error): Node referenced in local scope is not a declaration.", *node);
+          error_at_ast_node("Internal compiler error: Node referenced in local scope is not a declaration.", *node);
           exit(1);
         }
       }
@@ -234,6 +168,14 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
         case OPDIV: {
           Type_Info first = infer_type_of_expr(n->data.binary_op.first, scope);
           Type_Info second = infer_type_of_expr(n->data.binary_op.second, scope);
+          if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
+             (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
+            error_at_ast_node("The operands to an arithmetic operator must be integers.", *n);
+
+          if(first.type == TYPE_UNKNOWN_INT && second.type == TYPE_UNKNOWN_INT) {
+            first.data.unknown_int += second.data.unknown_int;
+            return first;
+          }
           if(can_implicitly_cast(first, second)) return second;
           if(can_implicitly_cast(second, first)) return first;
           error_cannot_implicitly_cast(second, first, *n, true);

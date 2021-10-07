@@ -169,7 +169,7 @@ void print_ast_node(Ast_Node n) {
       break;
 
     case NODE_PRIMITIVE_TYPE:
-      printf("%s", type_info_to_string((Type_Info){n.data.primitive_type, 0, {0}}));
+      printf("%s", type_info_to_string(n.data.primitive_type));
       break;
 
     default: printf("CANNOT PRINT NODE TYPE:%i", n.type); break;
@@ -180,16 +180,7 @@ char *type_info_to_string(Type_Info t) { // @Incomplete this should probably be 
   switch(t.type) {
     case TYPE_UNKNOWN:     return "unknown";
     case TYPE_NOTHING:     return "nothing";
-    case TYPE_UINT:        return "uint";
-    case TYPE_INT:         return "int";
-    case TYPE_S8:          return "s8";
-    case TYPE_S16:         return "s16";
-    case TYPE_S32:         return "s32";
-    case TYPE_S64:         return "s64";
-    case TYPE_U8:          return "u8";
-    case TYPE_U16:         return "u16";
-    case TYPE_U32:         return "u32";
-    case TYPE_U64:         return "u64";
+    case TYPE_INT:         return "some integer"; // @Incomplete: this bad
     case TYPE_UNKNOWN_INT: return "literal integer";
     default:
       return "[unprintable type]";

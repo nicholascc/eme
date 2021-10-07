@@ -10,16 +10,7 @@ typedef enum Type_Info_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
   TYPE_NOTHING,
 
-  TYPE_UINT,
   TYPE_INT,
-  TYPE_S8,
-  TYPE_S16,
-  TYPE_S32,
-  TYPE_S64,
-  TYPE_U8,
-  TYPE_U16,
-  TYPE_U32,
-  TYPE_U64,
   TYPE_UNKNOWN_INT,
 
   TYPE_STRUCT,
@@ -32,8 +23,12 @@ typedef struct Type_Info {
   Type_Info_Type type;
   int reference_count;
   union {
-    struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_U32, 0, {0}}
+    struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_UNKNOWN, 0, {0}}
     s64 unknown_int;
+    struct {
+      bool is_signed;
+      u8 width; // including sign bit
+    } integer;
     // let's not do structs yet.
     struct {
       Type_Info *element_type;
@@ -160,7 +155,7 @@ typedef struct Ast_Node {
       Ast_Node_Ptr_Array arguments;
     } function_call;
 
-    Type_Info_Type primitive_type; // can only be integer or unsigned integer types
+    Type_Info primitive_type;
 
     u64 symbol;
 
