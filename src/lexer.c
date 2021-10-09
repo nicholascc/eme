@@ -151,7 +151,6 @@ Token peek_token(Lexer *l) {
     // If the most significant bit is 0, this is already in 7-bit ASCII.
     // Otherwise, it's a multi-byte unicode character.
     if(c & (1 << 7)) {
-      printf("Processing unicode character: %c\n", c);
       char utf8_ch1 = c;
 
       if((utf8_ch1 & 0xe0) == 0xc0) {
@@ -165,7 +164,8 @@ Token peek_token(Lexer *l) {
         switch(u_char) {
           case 0x00B4: c = '\''; break; //	´ - ACUTE ACCENT
           default:
-            print_error_message("Unrecognized unicode character.", l->s.file_id, l->s.current_line, l->s.current_char);
+            print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+            printf("Unrecognized unicode character.\n");
             continue;
         }
 
@@ -187,14 +187,16 @@ Token peek_token(Lexer *l) {
           case 0x275D:                  // ❝  - HEAVY DOUBLE TURNED COMMA QUOTATION MARK ORNAMENT
           case 0x275E: c = '"' ; break; // ❞  - HEAVY DOUBLE COMMA QUOTATION MARK ORNAMENT
           default:
-            print_error_message("Unrecognized unicode character.", l->s.file_id, l->s.current_line, l->s.current_char);
+            print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+            printf("Unrecognized unicode character.\n");
             continue;
         }
 
       } else {
         // if the five most significant bits are 11110 then the unicode character is 4 utf-8 characters wide.
         // we don't recognize any of these characters (for now, at least)
-        print_error_message("Unrecognized unicode character.", l->s.file_id, l->s.current_line, l->s.current_char);
+        print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+        printf("Unrecognized unicode character.\n");
         continue;
       }
     }
@@ -218,7 +220,8 @@ Token peek_token(Lexer *l) {
       l->s.i++;
       l->s.current_char++;
       if(l->s.comment_level < 0) {
-        print_error_message("Unexpected end comment.", l->s.file_id, l->s.current_line, l->s.current_char);
+        print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+        printf("Unexpected comment end.\n");
       }
       continue;
     }
@@ -402,7 +405,8 @@ Token peek_token(Lexer *l) {
         case ',': t.type = TCOMMA; break;
         case '$': t.type = TDOLLAR_SIGN; break;
 
-        default: print_error_message("Unrecognized syntax character.", l->s.file_id, l->s.current_line, l->s.current_char);
+        default: print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+                 printf("Unrecognized special character.\n");
       }
 
       return t;

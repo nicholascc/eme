@@ -11,8 +11,10 @@
 
 
 
+// if message is NULL, lets the caller print the message
 void error_at_token(char *message, Token t, bool should_exit_now) {
-  print_error_message(message, t.file_id, t.line, t.character);
+  print_error(t.file_id, t.line, t.character);
+  if(message) printf("%s\n", message);
   if(should_exit_now) exit(1);
   should_exit_after_parsing = true;
 }
@@ -572,7 +574,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
       e.declaration.node = node;
       Scope_Entry_Array_push(&scope->entries, e);
     } else if(node->type == NODE_FUNCTION_DEFINITION) {
-      print_error_message("Function definitions are only allowed in the global scope.", node->file_id, node->line, node->character);
+      error_at_ast_node("Function definitions are only allowed in the global scope.", *node);
       should_exit_after_parsing = true;
     }
   }

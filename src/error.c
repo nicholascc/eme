@@ -12,23 +12,24 @@ int int_log10(int x) {
   return (int)log10((double)x); // @Cleanup this is ugly
 }
 
-void print_error_message(char *message, int file_id, int line, int character) {
-  // we store characters starting from 0, but users expect them to start from 1
+void print_error(int file_id, int line, int character) {
+  printf("\n\n");
   if(file_id >= 0 && file_id < files.length) {
     if(line >= 0 && character >= 0) {
       print_lines_in_file(file_id, line, 5);
       for(int i = 0; i < character+int_log10(line); i++)
         printf(" ");
       printf("   ^\n");
-      printf("Error at line %d, character %d: %s\n\n", line, character, message);
+      //printf("Error at line %d, character %d: ", line, character);
+      printf("Error at line %d: ", line);
     } else if(line >= 0) {
       print_lines_in_file(file_id, line, 5);
-      printf("Error at line %d: %s\n\n", line, message);
+      printf("Error at line %d: ", line);
     } else {
-      printf("Error: %s\n\n", message);
+      printf("Error: ");
     }
   } else {
-    printf("Error: %s\n\n", message);
+    printf("Error: ");
   }
 }
 
@@ -68,7 +69,8 @@ void print_one_line_in_file(int file_id, int line) {
         }
       }
     }
-    print_error_message("(internal compiler error) line/character past end of file", file_id, -1, -1);
+    print_error(file_id, -1, -1);
+    printf("Internal compiler error in error reporting: line/character past end of file\n");
     return;
   }
 }
@@ -115,6 +117,7 @@ void print_lines_in_file(int file_id, int line, int lines_to_print) {
     if(current_line > line-lines_to_print)
         printf("%c", c);
   }
-  print_error_message("(internal compiler error) line/character past end of file", file_id, -1, -1);
+  print_error(file_id, -1, -1);
+  printf("Internal compiler error in error reporting: line/character past end of file\n");
   return;
 }

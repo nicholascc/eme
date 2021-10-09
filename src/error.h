@@ -6,9 +6,12 @@
 bool should_exit_after_parsing; // indicates whether an error has occurred during parsing which would cause the later stages of compilation to fail.
 bool should_exit_after_type_inference; // same as above but for type inference phase
 
-// Given an error message, line, character, and file, prints out the error with a nice display of the line in which it occurred.
-// If any of the last 3 values are negative, their values are assumed to not be known the error message adapts to display correctly. (for example, it only displays the file if the line is negative, or it says "unknown location" if the file_id is invalid)
-void print_error_message(char *message, int file_id, int line, int character);
+// Given an error line, character, and file, prints out the error with a nice display of the line in which it occurred.
+// Then the function caller must print the actual error message after the prelude given here.
+// If any of the 3 values are negative, their values are assumed to not be known.
+// The error message adapts to display correctly for any amount of knowledge.
+// (for example, it only displays the line and not the character if the character is negative, or it says "unknown location" if the file_id is invalid)
+void print_error(int file_id, int line, int character);
 
 
 // Given a file id and a line number, prints that line out in the below format:

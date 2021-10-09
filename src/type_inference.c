@@ -14,7 +14,12 @@ s64 s64_abs(s64 x) {
 }
 
 bool can_implicitly_cast(Type_Info before, Type_Info after) {
-  printf("TESTING CAST, types %s -> %s\n", type_info_to_string(before), type_info_to_string(after));
+  printf("TESTING CAST, types ");
+  print_type_info(before);
+  printf(" -> ");
+  print_type_info(after);
+  printf("\n");
+
   if(before.type == TYPE_INT && after.type == TYPE_INT) {
     if(before.data.integer.width == after.data.integer.width &&
        before.data.integer.is_signed == after.data.integer.is_signed)
@@ -39,7 +44,8 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
 
     return true;
   } else if(before.type == TYPE_UNKNOWN_INT && after.type == TYPE_UNKNOWN_INT) {
-    print_error_message("Internal compiler error: Cannot implicitly cast a literal integer to a literal integer.", -1, -1, -1);
+    print_error(-1, -1, -1);
+    printf("Internal compiler error: Cannot implicitly cast a literal integer to a literal integer.\n");
     exit(1);
   }
   return false;
@@ -68,12 +74,15 @@ Type_Info solidify_type(Type_Info x, Ast_Node *node) {
 
 
 void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way) {
-  char message[1024];
+  error_at_ast_node(NULL, node);
+  printf("I cannot implicitly cast ");
+  print_type_info(a);
+  printf(" -> ");
+  print_type_info(b);
   if(cast_either_way)
-    sprintf(message, "I cannot implicitly cast %s -> %s or vice versa.", type_info_to_string(a), type_info_to_string(b));
+    printf(" or vice versa.\n");
   else
-    sprintf(message, "I cannot implicity cast %s -> %s.", type_info_to_string(a), type_info_to_string(b));
-  error_at_ast_node(message, node);
+    printf(".\n");
   should_exit_after_type_inference = true;
 }
 

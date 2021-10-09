@@ -194,7 +194,7 @@ void print_ast(Ast ast);
 void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node node);
-char *type_info_to_string(Type_Info t);
+void print_type_info(Type_Info t);
 
 void error_at_ast_node(char *message, Ast_Node node);
 
