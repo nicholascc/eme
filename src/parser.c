@@ -66,36 +66,32 @@ bool is_postfix_operator(Token t) {
   return t.type == TDOUBLE_PLUS || t.type == TDOUBLE_MINUS;
 }
 
-Ast_Node *literal_int_to_ast(Token t) {
-  Ast_Node node;
-  node.type = NODE_LITERAL;
-  node.line = t.line;
-  node.character = t.character;
-  node.file_id = t.file_id;
-  node.data.literal.type = (Type_Info) {TYPE_UNKNOWN_INT, 0, {0}};
-  node.data.literal.value = t.data.literal_int;
-  return allocate_ast_node(node);
+Ast_Literal *literal_int_to_ast(Token t) {
+  Ast_Literal *n = allocate_ast_node(NODE_LITERAL, sizeof(Ast_Literal));
+  n->n.line = t.line;
+  n->n.character = t.character;
+  n->n.file_id = t.file_id;
+  n->type = (Type_Info) {TYPE_UNKNOWN_INT, 0, {0}};
+  n->value = t.data.literal_int;
+  return n;
 }
 
-Ast_Node *symbol_to_ast(Token t) {
-  Ast_Node node;
-  node.type = NODE_SYMBOL;
-  node.line = t.line;
-  node.character = t.character;
-  node.file_id = t.file_id;
-  node.data.symbol = t.data.symbol;
-  return allocate_ast_node(node);
+Ast_Symbol *symbol_to_ast(Token t) {
+  Ast_Symbol *n = allocate_ast_node(NODE_SYMBOL, sizeof(Ast_Symbol));
+  n->n.line = t.line;
+  n->n.character = t.character;
+  n->n.file_id = t.file_id;
+  n->symbol = t.data.symbol;
+  return n;
 }
 
-Ast_Node *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
-  Ast_Node node;
-  node.file_id = op.file_id;
-  node.line = op.line;
-  node.character = op.character;
+Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
+  Ast_Binary_Op *n = allocate_ast_node(NODE_BINARY_OP, sizeof(Ast_Binary_Op));
+  n->n.file_id = op.file_id;
+  n->n.line = op.line;
+  n->n.character = op.character;
 
-  node.type = NODE_BINARY_OP;
-
-  Ast_Binary_Operator ast_op;
+  Ast_Binary_Op_Type ast_op;
   switch(op.type) {
     case TPLUS: ast_op = OPPLUS; break;
     case TMINUS: ast_op = OPMINUS; break;
@@ -109,22 +105,20 @@ Ast_Node *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TOPEN_BRACKET: ast_op = OPSUBSCRIPT; break;
   }
 
-  node.data.binary_op.first = first;
-  node.data.binary_op.second = second;
-  node.data.binary_op.op = ast_op;
+  n->first = first;
+  n->second = second;
+  n->operator = ast_op;
 
-  return allocate_ast_node(node);
+  return n;
 }
 
-Ast_Node *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
-  Ast_Node node;
-  node.file_id = operator.file_id;
-  node.line = operator.line;
-  node.character = operator.character;
+Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
+  Ast_Unary_Op *n = allocate_ast_node(NODE_UNARY_OP, sizeof(Ast_Unary_Op));
+  n->n.file_id = operator.file_id;
+  n->n.line = operator.line;
+  n->n.character = operator.character;
 
-  node.type = NODE_UNARY_OP;
-
-  Ast_Unary_Operator ast_op;
+  Ast_Unary_Op_Type ast_op;
   switch(operator.type) {
     case TMINUS: ast_op = OPNEGATE; break;
     case TASTERISK: ast_op = OPDEREFERENCE; break;
@@ -139,26 +133,24 @@ Ast_Node *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
       break;
   }
 
-  node.data.unary_op.operator = ast_op;
-  node.data.unary_op.operand = operand;
+  n->operator = ast_op;
+  n->operand = operand;
 
-  return allocate_ast_node(node);
+  return n;
 }
 
-Ast_Node *ternary_if_to_ast(Ast_Node *cond, Token op, Ast_Node *first, Ast_Node *second) {
+Ast_If *ternary_if_to_ast(Ast_Node *cond, Token op, Ast_Node *first, Ast_Node *second) {
   assert(op.type == TQUESTION_MARK && "(internal compiler error) failed to convert ternary if to AST");
-  Ast_Node node;
-  node.file_id = op.file_id;
-  node.line = op.line;
-  node.character = op.character;
+  Ast_If *n = allocate_ast_node(NODE_IF, sizeof(Ast_If));
+  n->n.file_id = op.file_id;
+  n->n.line = op.line;
+  n->n.character = op.character;
 
-  node.type = NODE_TERNARY_IF;
+  n->cond = cond;
+  n->first = first;
+  n->second = second;
 
-  node.data.ternary_if.cond = cond;
-  node.data.ternary_if.first = first;
-  node.data.ternary_if.second = second;
-
-  return allocate_ast_node(node);
+  return n;
 }
 
 // Expressions are parsed using Pratt parsing to handle operator precedence. See https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
@@ -327,15 +319,16 @@ Ast_Node *parse_function_call(Lexer *l, Scope *scope, Ast_Node *identifier, Toke
     }
   }
 
-  Ast_Node n;
-  n.file_id = open_paren.file_id;
-  n.line = open_paren.line;
-  n.character = open_paren.character;
-  n.type = NODE_FUNCTION_CALL;
-  n.data.function_call.identifier = identifier;
-  n.data.function_call.arguments = args;
 
-  return allocate_ast_node(n);
+  Ast_Function_Call *n = allocate_ast_node(NODE_FUNCTION_CALL, sizeof(Ast_Function_Call));
+  n->n.file_id = open_paren.file_id;
+  n->n.line = open_paren.line;
+  n->n.character = open_paren.character;
+  assert(n->n.type == NODE_SYMBOL);
+  n->identifier = (Ast_Symbol *)identifier;
+  n->arguments = args;
+
+  return n;
 }
 
 Ast_Node *parse_type(Lexer *l, Scope *scope) {
@@ -343,11 +336,10 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
   if(t.type != TSYMBOL) error_unexpected_token(t);
   int length;
   char *str = st_get_str_of(t.data.symbol, &length);
-  Ast_Node r;
-  r.line = t.line;
-  r.character = t.character;
-  r.file_id = t.file_id;
-  r.type = NODE_PRIMITIVE_TYPE;
+  Ast_Primitive_Type *n = allocate_ast_node(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
+  n->n.line = t.line;
+  n->n.character = t.character;
+  n->n.file_id = t.file_id;
   bool is_signed;
   u8 width;
   if(length == 4) {
@@ -392,11 +384,11 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
     else error_at_token("I expected a primitive type.", t, true);
   } else error_at_token("I expected a primitive type.", t, true);
 
-  r.data.primitive_type.type = TYPE_INT;
-  r.data.primitive_type.data.integer.is_signed = is_signed;
-  r.data.primitive_type.data.integer.width = width;
+  n->type_info.type = TYPE_INT;
+  n->type_info.data.integer.is_signed = is_signed;
+  n->type_info.data.integer.width = width;
 
-  return allocate_ast_node(r);
+  return n;
 }
 
 // parses definitions, expressions, statements, declarations, blocks, etc.
@@ -417,27 +409,25 @@ Ast_Node *parse_any_statement(Lexer *l, Scope *scope) {
       return parse_definition(l, scope);
     }
   } else if(first.type == TSEMICOLON) {
-    Ast_Node result;
-    result.line = first.line;
-    result.character = first.character;
-    result.file_id = first.file_id;
-    result.type = NODE_NULL;
-    return allocate_ast_node(result);
+    Ast_Node *n = allocate_ast_node(NODE_NULL, sizeof(Ast_Node));
+    n->line = first.line;
+    n->character = first.character;
+    n->file_id = first.file_id;
+    return n;
   } else if(first.type == TRETURN) {
-    Ast_Node result;
-    result.line = first.line;
-    result.character = first.character;
-    result.file_id = first.file_id;
-    result.type = NODE_RETURN;
-    result.data._return.value = parse_expression(l, scope, 0);
+    Ast_Return *n = allocate_ast_node(NODE_RETURN, sizeof(Ast_Return));
+    n->n.line = first.line;
+    n->n.character = first.character;
+    n->n.file_id = first.file_id;
+    n->value = parse_expression(l, scope, 0);
     expect_and_eat_semicolon(l);
-    return allocate_ast_node(result);
+    return n;
   }
 
   revert_state(l);
-  Ast_Node *result = parse_expression(l, scope, 0);
+  Ast_Node *n = parse_expression(l, scope, 0);
   expect_and_eat_semicolon(l);
-  return result;
+  return n;
 }
 
 Ast_Node *parse_decl(Lexer *l, Scope *scope) {
@@ -450,45 +440,41 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
   if(type.type == TEQUALS) {
     Ast_Node *value_ast = parse_expression(l, scope, 0);
     expect_and_eat_semicolon(l);
-    // decl with set without type
-    Ast_Node result;
-    result.line = colon.line;
-    result.character = colon.character;
-    result.file_id = colon.file_id;
-    result.type = NODE_UNTYPED_DECL_SET;
-    result.data.decl.symbol = id.data.symbol;
-    result.data.decl.value = value_ast;
-    result.data.decl.type_info = UNKNOWN_TYPE_INFO;
-    return allocate_ast_node(result);
+    Ast_Untyped_Decl_Set *n = allocate_ast_node(NODE_UNTYPED_DECL_SET, sizeof(Ast_Untyped_Decl_Set));
+    n->n.line = colon.line;
+    n->n.character = colon.character;
+    n->n.file_id = colon.file_id;
+    n->symbol = id.data.symbol;
+    n->value = value_ast;
+    n->type_info = UNKNOWN_TYPE_INFO;
+    return n;
   } else {
     revert_state(l);
     Ast_Node *type_ast = parse_type(l, scope);
     Token equals = peek_token(l);
     if(equals.type == TSEMICOLON) {
       // just decl
-      Ast_Node result;
-      result.line = colon.line;
-      result.character = colon.character;
-      result.file_id = colon.file_id;
-      result.type = NODE_TYPED_DECL;
-      result.data.decl.symbol = id.data.symbol;
-      result.data.decl.type = type_ast;
-      result.data.decl.type_info = UNKNOWN_TYPE_INFO;
-      return allocate_ast_node(result);
+      Ast_Typed_Decl *n = allocate_ast_node(NODE_TYPED_DECL, sizeof(Ast_Typed_Decl));
+      n->n.line = colon.line;
+      n->n.character = colon.character;
+      n->n.file_id = colon.file_id;
+      n->symbol = id.data.symbol;
+      n->type = type_ast;
+      n->type_info = UNKNOWN_TYPE_INFO;
+      return n;
     } else if(equals.type == TEQUALS) {
       // decl with type and set
       Ast_Node *value_ast = parse_expression(l, scope, 0);
       expect_and_eat_semicolon(l);
-      Ast_Node result;
-      result.line = colon.line;
-      result.character = colon.character;
-      result.file_id = colon.file_id;
-      result.type = NODE_TYPED_DECL_SET;
-      result.data.decl.symbol = id.data.symbol;
-      result.data.decl.type = type_ast;
-      result.data.decl.value = value_ast;
-      result.data.decl.type_info = UNKNOWN_TYPE_INFO;
-      return allocate_ast_node(result);
+      Ast_Typed_Decl_Set *n = allocate_ast_node(NODE_TYPED_DECL_SET, sizeof(Ast_Typed_Decl_Set));
+      n->n.line = colon.line;
+      n->n.character = colon.character;
+      n->n.file_id = colon.file_id;
+      n->symbol = id.data.symbol;
+      n->type = type_ast;
+      n->value = value_ast;
+      n->type_info = UNKNOWN_TYPE_INFO;
+      return n;
     } else {
       error_unexpected_token(equals);
     }
@@ -522,10 +508,10 @@ Ast *parse_file(Lexer *l) {
        node->type == NODE_FUNCTION_DEFINITION) {
       Scope_Entry e;
       switch(node->type) {
-        case NODE_TYPED_DECL:
-        case NODE_TYPED_DECL_SET:
-        case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl.symbol; break;
-        case NODE_FUNCTION_DEFINITION: e.symbol = node->data.function_definition.symbol; break;
+        case NODE_TYPED_DECL: e.symbol = ((Ast_Typed_Decl *)node)->symbol; break;
+        case NODE_TYPED_DECL_SET: e.symbol = ((Ast_Typed_Decl_Set *)node)->symbol; break;
+        case NODE_UNTYPED_DECL_SET: e.symbol = ((Ast_Untyped_Decl_Set *)node)->symbol; break;
+        case NODE_FUNCTION_DEFINITION: e.symbol = ((Ast_Function_Definition *)node)->symbol; break;
       }
       e.declaration.unit = unit;
       Scope_Entry_Array_push(&result->scope.entries, e);
@@ -537,14 +523,13 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
   Token first = peek_token(l);
   assert(first.type == TOPEN_BRACE && "(internal compiler error) block must begin with open brace");
 
-  Ast_Node *result = allocate_null_ast_node();
-  result->line = first.line;
-  result->character = first.character;
-  result->file_id = first.file_id;
-  result->type = NODE_BLOCK;
-  Ast_Node_Ptr_Array *statements = &result->data.block.statements;
+  Ast_Block *result = allocate_ast_node(NODE_BLOCK, sizeof(Ast_Block));
+  result->n.line = first.line;
+  result->n.character = first.character;
+  result->n.file_id = first.file_id;
+  Ast_Node_Ptr_Array *statements = &result->statements;
   *statements = init_Ast_Node_Ptr_Array(2);
-  Scope *scope = &result->data.block.scope;
+  Scope *scope = &result->scope;
   scope->is_ordered = true;
   scope->has_parent = true;
   scope->parent = parent_scope;
@@ -567,9 +552,9 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
        node->type == NODE_UNTYPED_DECL_SET) {
       Scope_Entry e;
       switch(node->type) {
-        case NODE_TYPED_DECL:
-        case NODE_TYPED_DECL_SET:
-        case NODE_UNTYPED_DECL_SET: e.symbol = node->data.decl.symbol; break;
+        case NODE_TYPED_DECL: e.symbol = ((Ast_Typed_Decl *)node)->symbol; break;
+        case NODE_TYPED_DECL_SET: e.symbol = ((Ast_Typed_Decl_Set *)node)->symbol; break;
+        case NODE_UNTYPED_DECL_SET: e.symbol = ((Ast_Untyped_Decl_Set *)node)->symbol; break;
       }
       e.declaration.node = node;
       Scope_Entry_Array_push(&scope->entries, e);
@@ -600,14 +585,13 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   Ast_Node *return_type = parse_type(l, scope);
   Ast_Node *body = parse_block(l, scope);
 
-  Ast_Node result;
-  result.file_id = double_colon.file_id;
-  result.line = double_colon.line;
-  result.character = double_colon.character;
+  Ast_Function_Definition *n = allocate_ast_node(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
+  n->n.file_id = double_colon.file_id;
+  n->n.line = double_colon.line;
+  n->n.character = double_colon.character;
 
-  result.type = NODE_FUNCTION_DEFINITION;
-  result.data.function_definition.symbol = identifier.data.symbol;
-  result.data.function_definition.return_type = return_type;
-  result.data.function_definition.body = body;
-  return allocate_ast_node(result);
+  n->symbol = identifier.data.symbol;
+  n->return_type = return_type;
+  n->body = body;
+  return n;
 }

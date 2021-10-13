@@ -51,7 +51,7 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
   return false;
 }
 
-Type_Info solidify_type(Type_Info x, Ast_Node *node) {
+Type_Info solidify_type(Type_Info x, Ast_Node node) {
   if(x.type == TYPE_UNKNOWN_INT) {
     Type_Info r;
     r.type = TYPE_INT;
@@ -62,7 +62,7 @@ Type_Info solidify_type(Type_Info x, Ast_Node *node) {
   } else if(x.type == TYPE_INT)
     return x;
   else {
-    error_at_ast_node("I don't know how to make this type concrete.", *node);
+    error_at_ast_node("I don't know how to make this type concrete.", node);
     exit(1);
   }
 }
@@ -92,30 +92,40 @@ Type_Info type_info_of_type_expr(Ast_Node *type_node) {
                       *type_node);
     exit(1);
   }
-  return type_node->data.primitive_type;
+  Ast_Primitive_Type *n = (Ast_Primitive_Type *)type_node;
+  return n->type_info;
 }
 
 Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
-  if(decl->data.decl.type_info.type != TYPE_UNKNOWN) return decl->data.decl.type_info;
-
   if(decl->type == NODE_TYPED_DECL) {
-    decl->data.decl.type_info = type_info_of_type_expr(decl->data.decl.type);
-    return decl->data.decl.type_info;
-  } else if(decl->type == NODE_TYPED_DECL_SET || decl->type == NODE_UNTYPED_DECL_SET) {
+    Ast_Typed_Decl *n = (Ast_Typed_Decl *)decl;
+    if(n->type_info.type == TYPE_UNKNOWN) n->type_info = type_info_of_type_expr(n->type);
+    return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(decl->data.decl.value, scope);
-    if(decl->type == NODE_TYPED_DECL_SET) {
-      Type_Info given_type = type_info_of_type_expr(decl->data.decl.type);
-      if(can_implicitly_cast(inferred_type, given_type)) {
-        decl->data.decl.type_info = given_type;
-        return given_type;
-      } else {
-        error_cannot_implicitly_cast(inferred_type, given_type, *decl, false);
-        inferred_type = given_type;
-      }
+  } else if(decl->type == NODE_TYPED_DECL_SET) {
+    Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)decl;
+    if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
+
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope);
+    Type_Info given_type = type_info_of_type_expr(n->type);
+    if(can_implicitly_cast(inferred_type, given_type)) {
+      n->type_info = given_type;
+      return given_type;
+    } else {
+      error_cannot_implicitly_cast(inferred_type, given_type, n->n, false);
+      exit(1);
     }
-    decl->data.decl.type_info = solidify_type(inferred_type, decl);
+    n->type_info = solidify_type(inferred_type, n->n);
     return inferred_type;
+
+  } else if(decl->type == NODE_UNTYPED_DECL_SET) {
+    Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)decl;
+    if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
+
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope);
+    n->type_info = solidify_type(inferred_type, n->n);
+    return inferred_type;
+
   } else {
     error_at_ast_node("Internal compiler error: This is not a declaration.", *decl);
     exit(1);
@@ -142,13 +152,19 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
         if(!scope->is_ordered)
           return infer_type_info_of_decl_unit(e.declaration.unit, scope);
         else {
-          Ast_Node n = *e.declaration.node;
-          if(n.type == NODE_TYPED_DECL) {
-            assert(n.data.decl.type_info.type != TYPE_UNKNOWN);
-            return n.data.decl.type_info;
-          } else if(n.type == NODE_TYPED_DECL_SET || n.type == NODE_UNTYPED_DECL_SET) {
-            assert(n.data.decl.type_info.type != TYPE_UNKNOWN);
-            return n.data.decl.type_info;
+          Ast_Node *node = e.declaration.node;
+          if(node->type == NODE_TYPED_DECL) {
+            Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
+            assert(n->type_info.type != TYPE_UNKNOWN);
+            return n->type_info;
+          } else if(node->type == NODE_TYPED_DECL_SET) {
+            Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
+            assert(n->type_info.type != TYPE_UNKNOWN);
+            return n->type_info;
+          } else if(node->type == NODE_UNTYPED_DECL_SET) {
+            Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
+            assert(n->type_info.type != TYPE_UNKNOWN);
+            return n->type_info;
           }
           error_at_ast_node("Internal compiler error: Node referenced in local scope is not a declaration.", *node);
           exit(1);
@@ -165,21 +181,22 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
   exit(1);
 }
 
-Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
-  switch(n->type) {
+Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
+  switch(node->type) {
     case NODE_LITERAL:
-      return n->data.literal.type;
+      return ((Ast_Literal*)node)->type;
     case NODE_BINARY_OP: {
-      switch(n->data.binary_op.op) {
+      Ast_Binary_Op *n = (Ast_Binary_Op *)node;
+      switch(n->operator) {
         case OPPLUS:
         case OPMINUS:
         case OPMUL:
         case OPDIV: {
-          Type_Info first = infer_type_of_expr(n->data.binary_op.first, scope);
-          Type_Info second = infer_type_of_expr(n->data.binary_op.second, scope);
+          Type_Info first = infer_type_of_expr(n->first, scope);
+          Type_Info second = infer_type_of_expr(n->second, scope);
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
-            error_at_ast_node("The operands to an arithmetic operator must be integers.", *n);
+            error_at_ast_node("The operands to an arithmetic operator must be integers.", *node);
 
           if(first.type == TYPE_UNKNOWN_INT && second.type == TYPE_UNKNOWN_INT) {
             first.data.unknown_int += second.data.unknown_int;
@@ -187,63 +204,64 @@ Type_Info infer_type_of_expr(Ast_Node *n, Scope *scope) {
           }
           if(can_implicitly_cast(first, second)) return second;
           if(can_implicitly_cast(second, first)) return first;
-          error_cannot_implicitly_cast(second, first, *n, true);
-          return first;
+          error_cannot_implicitly_cast(second, first, *node, true);
+          exit(1);
         }
 
         case OPSET_EQUALS: {
           if(!scope->is_ordered) {
-            error_at_ast_node("You cannot use a set statement outside of a block.", *n);
+            error_at_ast_node("You cannot use a set statement outside of a block.", *node);
             should_exit_after_type_inference = true;
           }
-          Type_Info left = infer_type_of_expr(n->data.binary_op.first, scope);
-          Type_Info right = infer_type_of_expr(n->data.binary_op.second, scope);
+          Type_Info left = infer_type_of_expr(n->first, scope);
+          Type_Info right = infer_type_of_expr(n->second, scope);
           if(can_implicitly_cast(right, left)) return left;
-          error_cannot_implicitly_cast(right, left, *n, false);
+          error_cannot_implicitly_cast(right, left, *node, false);
           exit(1);
         }
 
         default:
-          error_at_ast_node("I cannot infer the type of this expression yet.", *n);
+          error_at_ast_node("I cannot infer the type of this expression yet.", *node);
           exit(1);
       }
       break;
     }
     case NODE_SYMBOL: {
-      return get_type_of_identifier_in_scope(n->data.symbol, scope, n);
+      return get_type_of_identifier_in_scope(((Ast_Symbol*)node)->symbol, scope, node);
     }
     case NODE_BLOCK: {
-      return infer_types_of_block(n);
+      return infer_types_of_block(node);
       break;
     }
     default: {
-      error_at_ast_node("I cannot infer the type of this expression yet.", *n);
+      error_at_ast_node("I cannot infer the type of this expression yet.", *node);
       exit(1);
     }
   }
 }
 
-Type_Info infer_types_of_block(Ast_Node *block) {
-  assert(block->type == NODE_BLOCK);
+Type_Info infer_types_of_block(Ast_Node *node_block) {
+  assert(node_block->type == NODE_BLOCK);
   Type_Info last_statement_type = NOTHING_TYPE_INFO;
-  for(int i = 0; i < block->data.block.statements.length; i++) {
-    Ast_Node *node = block->data.block.statements.data[i];
+  Ast_Block *block = (Ast_Block *) node_block;
+  for(int i = 0; i < block->statements.length; i++) {
+    Ast_Node *node = block->statements.data[i];
     switch(node->type) {
       case NODE_LITERAL:
       case NODE_BINARY_OP:
       case NODE_UNARY_OP:
-      case NODE_TERNARY_IF:
+      case NODE_IF:
       case NODE_FUNCTION_CALL:
       case NODE_SYMBOL:
       case NODE_BLOCK: {
-        last_statement_type = infer_type_of_expr(node, &block->data.block.scope);
+        last_statement_type = infer_type_of_expr(node, &block->scope);
         break;
       }
 
       case NODE_TYPED_DECL:
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {
-        last_statement_type = infer_type_info_of_decl(node, &block->data.block.scope);
+        last_statement_type = infer_type_info_of_decl(node, &block->scope);
         break;
       }
 
@@ -253,7 +271,8 @@ Type_Info infer_types_of_block(Ast_Node *block) {
 
       case NODE_FUNCTION_DEFINITION:
       case NODE_NULL: {
-        error_at_ast_node("Null nodes or function definitions are not allowed in a function definition.", *node);
+        error_at_ast_node("Null nodes or function definitions are not allowed in a function definition.",
+                          *node);
         exit(1);
       }
 
@@ -279,12 +298,11 @@ void infer_types_of_ast(Ast *ast) {
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET:
       case NODE_TYPED_DECL: {
-        if(decl->data.decl.type_info.type == TYPE_UNKNOWN)
-          infer_type_info_of_decl(decl, &ast->scope);
+        infer_type_info_of_decl(decl, &ast->scope);
         break;
       }
       case NODE_FUNCTION_DEFINITION: {
-        infer_types_of_block(decl->data.function_definition.body);
+        infer_types_of_block(((Ast_Function_Definition*)decl)->body);
         break;
       }
       default:

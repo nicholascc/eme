@@ -12,15 +12,9 @@ Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
 Type_Info NOTHING_TYPE_INFO = {TYPE_NOTHING, 0, {0}};
 
 
-Ast_Node *allocate_null_ast_node() {
-  Ast_Node *result = malloc(sizeof(Ast_Node));
-  result->type = NODE_NULL;
-  return result;
-}
-
-Ast_Node *allocate_ast_node(Ast_Node node) {
-  Ast_Node *result = malloc(sizeof(Ast_Node));
-  *result = node;
+Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size) {
+  Ast_Node *result = malloc(size);
+  result->type = type;
   return result;
 }
 
@@ -45,7 +39,7 @@ void print_symbol(u64 symbol) {
 
 void print_ast(Ast ast) {
   for(int i = 0; i < ast.compilation_units.length; i++) {
-    print_ast_node(*ast.compilation_units.data[i]->node);
+    print_ast_node(ast.compilation_units.data[i]->node);
     printf("\n\n");
   }
 }
@@ -53,23 +47,29 @@ void print_ast(Ast ast) {
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes) {
   for(int i = 0; i < nodes.length; i++) {
     Ast_Node *node = nodes.data[i];
-    print_ast_node(*node);
+    print_ast_node(node);
     printf(";\n");
   }
 }
 
-void print_ast_node(Ast_Node n) {
-  switch(n.type) {
-    case NODE_NULL:
+void print_ast_node(Ast_Node *node) {
+  switch(node->type) {
+    case NODE_NULL: {
       printf("<NULL>");
       break;
-    case NODE_LITERAL:
-      printf("%i", n.data.literal.value);
+    }
+
+    case NODE_LITERAL: {
+      Ast_Literal *n = node;
+      printf("%lli", n->value);
       break;
-    case NODE_BINARY_OP:
+    }
+
+    case NODE_BINARY_OP: {
+      Ast_Binary_Op *n = node;
       printf("(");
-      print_ast_node(*n.data.binary_op.first);
-      switch(n.data.binary_op.op) {
+      print_ast_node(n->first);
+      switch(n->operator) {
         case OPPLUS:  printf(" + "); break;
         case OPMINUS: printf(" - "); break;
         case OPMUL:   printf(" * "); break;
@@ -85,94 +85,119 @@ void print_ast_node(Ast_Node n) {
 
         case OPTEST_EQUALS: printf(" == "); break;
       }
-      print_ast_node(*n.data.binary_op.second);
-      if(n.data.binary_op.op == OPSUBSCRIPT) {
+      print_ast_node(n->second);
+      if(n->operator == OPSUBSCRIPT) {
         printf("]");
       }
       printf(")");
       break;
-    case NODE_UNARY_OP:
-      switch(n.data.unary_op.operator) {
+    }
+
+
+    case NODE_UNARY_OP: {
+      Ast_Unary_Op *n = node;
+      switch(n->operator) {
         case OPNEGATE: printf("-"); break;
         case OPREFERENCE: printf("&"); break;
         case OPDEREFERENCE: printf("*"); break;
         case OPPLUS_PLUS_FIRST: printf("++"); break;
         case OPMINUS_MINUS_FIRST: printf("--"); break;
       }
-      print_ast_node(*n.data.unary_op.operand);
-      switch(n.data.unary_op.operator) {
+      print_ast_node(n->operand);
+      switch(n->operator) {
         case OPPLUS_PLUS_SECOND: printf("++"); break;
         case OPMINUS_MINUS_SECOND: printf("--"); break;
       }
       break;
+    }
+
     case NODE_SYMBOL: {
-      print_symbol(n.data.symbol);
+      Ast_Symbol *n = node;
+      print_symbol(n->symbol);
       break;
     }
 
-    case NODE_TERNARY_IF:
+    case NODE_IF: {
+      Ast_If *n = node;
       printf("(");
-      print_ast_node(*n.data.ternary_if.cond);
+      print_ast_node(n->cond);
       printf(" ? ");
-      print_ast_node(*n.data.ternary_if.first);
+      print_ast_node(n->first);
       printf(" : ");
-      print_ast_node(*n.data.ternary_if.second);
+      print_ast_node(n->second);
       printf(")");
       break;
+    }
 
-    case NODE_FUNCTION_CALL:
-      print_ast_node(*n.data.function_call.identifier);
+    case NODE_FUNCTION_CALL: {
+      Ast_Function_Call *n = node;
+      print_ast_node(n->identifier);
       printf("(");
-      for(int i = 0; i < n.data.function_call.arguments.length; i++) {
+      for(int i = 0; i < n->arguments.length; i++) {
         if(i > 0) printf(", ");
-        print_ast_node(*n.data.function_call.arguments.data[i]);
+        print_ast_node(n->arguments.data[i]);
       }
       printf(")");
       break;
+    }
 
-    case NODE_TYPED_DECL_SET:
-    case NODE_UNTYPED_DECL_SET:
-      print_symbol(n.data.decl.symbol);
-      if(n.type == NODE_TYPED_DECL_SET) {
-        printf(": ");
-        print_ast_node(*n.data.decl.type);
-        printf(" = ");
-      } else {
-        printf(" := ");
-      }
-      print_ast_node(*n.data.decl.value);
-      break;
-
-    case NODE_TYPED_DECL:
-      print_symbol(n.data.decl.symbol);
+    case NODE_TYPED_DECL_SET: {
+      Ast_Typed_Decl_Set *n = node;
+      print_symbol(n->symbol);
       printf(": ");
-      print_ast_node(*n.data.decl.type);
-      break;
+      print_ast_node(n->type);
+      printf(" = ");
+      print_ast_node(n->value);
+    }
 
-    case NODE_RETURN:
+    case NODE_UNTYPED_DECL_SET: {
+      Ast_Untyped_Decl_Set *n = node;
+      print_symbol(n->symbol);
+      printf(" := ");
+      print_ast_node(n->value);
+      break;
+    }
+
+    case NODE_TYPED_DECL: {
+      Ast_Typed_Decl *n = node;
+      print_symbol(n->symbol);
+      printf(": ");
+      print_ast_node(n->type);
+      break;
+    }
+
+    case NODE_RETURN: {
+      Ast_Return *n = node;
       printf("return ");
-      print_ast_node(*n.data._return.value);
+      print_ast_node(n->value);
       break;
+    }
 
-    case NODE_FUNCTION_DEFINITION:
-      print_symbol(n.data.function_definition.symbol);
+    case NODE_FUNCTION_DEFINITION: {
+      Ast_Function_Definition *n = node;
+      print_symbol(n->symbol);
       printf(" :: () -> ");
-      print_ast_node(*n.data.function_definition.return_type);
+      print_ast_node(n->return_type);
       printf(" ");
-      print_ast_node(*n.data.function_definition.body);
+      print_ast_node(n->body);
       break;
+    }
 
-    case NODE_BLOCK:
+    case NODE_BLOCK: {
+      Ast_Block *n = node;
       printf("{\n");
-      print_ast_statement_array(n.data.block.statements);
+      print_ast_statement_array(n->statements);
       printf("}");
       break;
+    }
 
-    case NODE_PRIMITIVE_TYPE:
-      print_type_info(n.data.primitive_type);
+    case NODE_PRIMITIVE_TYPE: {
+      Ast_Primitive_Type *n = node;
+      print_type_info(n->type_info);
       break;
+    }
 
-    default: printf("CANNOT PRINT NODE TYPE:%i", n.type); break;
+    default: printf("CANNOT PRINT NODE TYPE:%i", node->type); break;
   }
 }
 
