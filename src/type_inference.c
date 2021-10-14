@@ -20,6 +20,8 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
   print_type_info(after);
   printf("\n");
 
+  if(after.type == TYPE_POISON) return true;
+
   if(before.type == TYPE_INT && after.type == TYPE_INT) {
     if(before.data.integer.width == after.data.integer.width &&
        before.data.integer.is_signed == after.data.integer.is_signed)
@@ -52,7 +54,8 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
 }
 
 Type_Info solidify_type(Type_Info x, Ast_Node node) {
-  if(x.type == TYPE_UNKNOWN_INT) {
+  if(x.type == TYPE_POISON) return POISON_TYPE_INFO;
+  else if(x.type == TYPE_UNKNOWN_INT) {
     Type_Info r;
     r.type = TYPE_INT;
     r.reference_count = 0;
@@ -63,7 +66,7 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
     return x;
   else {
     error_at_ast_node("I don't know how to make this type concrete.", node);
-    exit(1);
+    return POISON_TYPE_INFO;
   }
 }
 
@@ -108,12 +111,17 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
 
     Type_Info inferred_type = infer_type_of_expr(n->value, scope);
     Type_Info given_type = type_info_of_type_expr(n->type);
-    if(can_implicitly_cast(inferred_type, given_type)) {
+
+    if(inferred_type.type == TYPE_POISON || given_type.type == TYPE_POISON) {
+      n->type_info = POISON_TYPE_INFO;
+      return POISON_TYPE_INFO;
+    } else if(can_implicitly_cast(inferred_type, given_type)) {
       n->type_info = given_type;
       return given_type;
     } else {
       error_cannot_implicitly_cast(inferred_type, given_type, n->n, false);
-      exit(1);
+      n->type_info = POISON_TYPE_INFO;
+      return POISON_TYPE_INFO;
     }
     n->type_info = solidify_type(inferred_type, n->n);
     return inferred_type;
@@ -194,6 +202,8 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
         case OPDIV: {
           Type_Info first = infer_type_of_expr(n->first, scope);
           Type_Info second = infer_type_of_expr(n->second, scope);
+          if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
+
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
             error_at_ast_node("The operands to an arithmetic operator must be integers.", *node);
@@ -205,7 +215,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
           if(can_implicitly_cast(first, second)) return second;
           if(can_implicitly_cast(second, first)) return first;
           error_cannot_implicitly_cast(second, first, *node, true);
-          exit(1);
+          return POISON_TYPE_INFO;
         }
 
         case OPSET_EQUALS: {
@@ -215,9 +225,10 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
           }
           Type_Info left = infer_type_of_expr(n->first, scope);
           Type_Info right = infer_type_of_expr(n->second, scope);
+          if(left.type == TYPE_POISON || right.type == TYPE_POISON) return POISON_TYPE_INFO;
           if(can_implicitly_cast(right, left)) return left;
           error_cannot_implicitly_cast(right, left, *node, false);
-          exit(1);
+          return POISON_TYPE_INFO;
         }
 
         default:

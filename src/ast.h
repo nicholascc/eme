@@ -9,6 +9,9 @@
 typedef enum Type_Info_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
   TYPE_NOTHING,
+  TYPE_POISON, // used to indicate a type that is unknown due to a compiler
+               // error. A poison type should cause no errors and simply
+               // remove the possibility of false positive errors.
 
   TYPE_INT,
   TYPE_UNKNOWN_INT,
@@ -38,6 +41,7 @@ typedef struct Type_Info {
 
 Type_Info UNKNOWN_TYPE_INFO;
 Type_Info NOTHING_TYPE_INFO;
+Type_Info POISON_TYPE_INFO;
 
 typedef enum Ast_Node_Type {
   NODE_NULL,
