@@ -5,6 +5,7 @@
 
 #include "c-utils/integer.h"
 #include "c-utils/darray.h"
+#include "errors.h"
 
 typedef enum Type_Info_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
@@ -76,9 +77,7 @@ typedef enum Ast_Node_Type {
 
 typedef struct Ast_Node {
   Ast_Node_Type type;
-  int line;
-  int character;
-  int file_id;
+  Location loc;
 } Ast_Node;
 
 GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
@@ -238,7 +237,5 @@ void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node *node);
 void print_type_info(Type_Info t);
-
-void error_at_ast_node(char *message, Ast_Node node);
 
 #endif /* end of include guard: AST_H */

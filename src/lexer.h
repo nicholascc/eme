@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include "c-utils/integer.h"
+#include "errors.h"
 
 typedef enum Token_Type {
   TEOL = 0,
@@ -65,9 +66,7 @@ typedef enum Token_Type {
 } Token_Type;
 
 typedef struct Token {
-  int character;
-  int line;
-  int file_id;
+  Location loc;
   Token_Type type;
 
   union {
@@ -82,10 +81,8 @@ void print_token(Token token);
 
 typedef struct Lexer_State {
   int i;
-  int current_line;
-  int current_char;
-  int file_id;
   int comment_level; // allows for nested /* and */
+  Location loc;
   bool line_is_commented; // have we seen a '//' comment on this line already?
   bool finished;
   char *to_lex;

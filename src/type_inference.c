@@ -3,7 +3,27 @@
 #include <stdio.h>
 
 #include "ast.h"
-#include "error.h"
+#include "errors.h"
+
+
+void type_inference_error(char *message, Location l) {
+  print_error_message(message, l);
+  should_exit_after_type_inference = true;
+}
+
+void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way) {
+  type_inference_error(NULL, node.loc);
+  printf("I cannot implicitly cast ");
+  print_type_info(a);
+  printf(" -> ");
+  print_type_info(b);
+  if(cast_either_way)
+    printf(" or vice versa.\n");
+  else
+    printf(".\n");
+}
+
+
 
 s64 power_of_two(int n) {
   return ((s64)1) << ((s64) n);
@@ -46,8 +66,8 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
 
     return true;
   } else if(before.type == TYPE_UNKNOWN_INT && after.type == TYPE_UNKNOWN_INT) {
-    print_error(-1, -1, -1);
-    printf("Internal compiler error: Cannot implicitly cast a literal integer to a literal integer.\n");
+    type_inference_error("Internal compiler error: Cannot implicitly cast a literal integer to a literal integer.",
+                         NULL_LOCATION);
     exit(1);
   }
   return false;
@@ -65,7 +85,7 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
   } else if(x.type == TYPE_INT)
     return x;
   else {
-    error_at_ast_node("I don't know how to make this type concrete.", node);
+    type_inference_error("I don't know how to make this type concrete.", node.loc);
     return POISON_TYPE_INFO;
   }
 }
@@ -75,24 +95,9 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
 
 
 
-
-void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way) {
-  error_at_ast_node(NULL, node);
-  printf("I cannot implicitly cast ");
-  print_type_info(a);
-  printf(" -> ");
-  print_type_info(b);
-  if(cast_either_way)
-    printf(" or vice versa.\n");
-  else
-    printf(".\n");
-  should_exit_after_type_inference = true;
-}
-
 Type_Info type_info_of_type_expr(Ast_Node *type_node) {
   if(type_node->type != NODE_PRIMITIVE_TYPE) {
-    error_at_ast_node("Internal compiler error: Compiler expected a primitive type.",
-                      *type_node);
+    type_inference_error("Internal compiler error: Compiler expected a primitive type.", type_node->loc);
     exit(1);
   }
   Ast_Primitive_Type *n = (Ast_Primitive_Type *)type_node;
@@ -135,14 +140,14 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
     return inferred_type;
 
   } else {
-    error_at_ast_node("Internal compiler error: This is not a declaration.", *decl);
+    type_inference_error("Internal compiler error: This is not a declaration.", decl->loc);
     exit(1);
   }
 }
 
 Type_Info infer_type_info_of_decl_unit(Compilation_Unit *unit, Scope *scope) {
   if(unit->seen_in_type_inference && !unit->type_inferred) {
-    error_at_ast_node("I found a circular dependency at this node.", *unit->node);
+    type_inference_error("I found a circular dependency at this node.", unit->node->loc);
     exit(1);
   }
   unit->seen_in_type_inference = true;
@@ -174,7 +179,7 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
             assert(n->type_info.type != TYPE_UNKNOWN);
             return n->type_info;
           }
-          error_at_ast_node("Internal compiler error: Node referenced in local scope is not a declaration.", *node);
+          type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration.", node->loc);
           exit(1);
         }
       }
@@ -185,7 +190,7 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
     else
       break;
   }
-  error_at_ast_node("This variable is undefined in this scope.", *node);
+  type_inference_error("This variable is undefined in this scope.", node->loc);
   exit(1);
 }
 
@@ -206,7 +211,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
 
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
-            error_at_ast_node("The operands to an arithmetic operator must be integers.", *node);
+            type_inference_error("The operands to an arithmetic operator must be integers.", node->loc);
 
           if(first.type == TYPE_UNKNOWN_INT && second.type == TYPE_UNKNOWN_INT) {
             first.data.unknown_int += second.data.unknown_int;
@@ -220,8 +225,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
 
         case OPSET_EQUALS: {
           if(!scope->is_ordered) {
-            error_at_ast_node("You cannot use a set statement outside of a block.", *node);
-            should_exit_after_type_inference = true;
+            type_inference_error("You cannot use a set statement outside of a block.", node->loc);
           }
           Type_Info left = infer_type_of_expr(n->first, scope);
           Type_Info right = infer_type_of_expr(n->second, scope);
@@ -232,7 +236,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
         }
 
         default:
-          error_at_ast_node("I cannot infer the type of this expression yet.", *node);
+          type_inference_error("I cannot infer the type of this expression yet.", node->loc);
           exit(1);
       }
       break;
@@ -245,7 +249,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
       break;
     }
     default: {
-      error_at_ast_node("I cannot infer the type of this expression yet.", *node);
+      type_inference_error("I cannot infer the type of this expression yet.", node->loc);
       exit(1);
     }
   }
@@ -282,15 +286,15 @@ Type_Info infer_types_of_block(Ast_Node *node_block) {
 
       case NODE_FUNCTION_DEFINITION:
       case NODE_NULL: {
-        error_at_ast_node("Null nodes or function definitions are not allowed in a function definition.",
-                          *node);
+        type_inference_error("Null nodes or function definitions are not allowed in a function definition.",
+                             node->loc);
         exit(1);
       }
 
       case NODE_PRIMITIVE_TYPE:
       default: {
-        error_at_ast_node("Internal compiler error: I cannot infer the type of this node.",
-                          *node);
+        type_inference_error("Internal compiler error: I cannot infer the type of this node.",
+                             node->loc);
         exit(1);
       }
     }
@@ -317,8 +321,8 @@ void infer_types_of_ast(Ast *ast) {
         break;
       }
       default:
-        error_at_ast_node("Internal compiler error: This node referred to by a scope entry is not a declaration",
-                          *decl);
+        type_inference_error("Internal compiler error: This node referred to by a scope entry is not a declaration",
+                             decl->loc);
         exit(1);
     }
     unit->type_inferred = true;

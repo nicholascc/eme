@@ -9,11 +9,11 @@
 #include "c-utils/integer.h"
 #include "c-utils/darray.h"
 #include "symbol_table.h"
-#include "error.h"
+#include "errors.h"
 
 
 void print_token(Token t) {
-  printf("Token at file %i, line %i, and character %i: ", t.file_id, t.line, t.character);
+  printf("Token at file %i, line %i, and character %i: ", t.loc.file_id, t.loc.line, t.loc.character);
   if(t.type == TEOL) {
     printf("EOL\n");
     return;
@@ -89,11 +89,11 @@ void print_token(Token t) {
   printf("\")\n");
 }
 
-Token eol_token(int file_id, int line) {
+Token eol_token(Location l) {
   Token t;
-  t.character = -1;
-  t.line = line;
-  t.file_id = file_id;
+  t.loc.character = -1;
+  t.loc.line = l.line;
+  t.loc.file_id = l.file_id;
   t.type = TEOL;
   return t;
 }
@@ -101,9 +101,9 @@ Token eol_token(int file_id, int line) {
 Lexer new_lexer(char *to_lex, int file_id) {
   Lexer_State s;
   s.i = -1;
-  s.current_line = 1;
-  s.current_char = 0;
-  s.file_id = file_id;
+  s.loc.line = 1;
+  s.loc.character = 0;
+  s.loc.file_id = file_id;
   s.to_lex = to_lex;
   s.comment_level = 0;
   s.line_is_commented = false;
@@ -139,12 +139,12 @@ Token peek_token(Lexer *l) {
 
   while(c = l->s.to_lex[++l->s.i]) {
     if(c == '\n') {
-      l->s.current_char = 0;
-      l->s.current_line++;
+      l->s.loc.character = 0;
+      l->s.loc.line++;
       l->s.line_is_commented = false;
       continue;
     }
-    l->s.current_char++;
+    l->s.loc.character++;
 
     // HANDLE UNICODE
     // All we're going to do here is read through unicode characters. If they are some sort of apostrophe or quotation mark we convert them to their ASCII form, and if they're unrecognized we just print an error and skip them.
@@ -164,7 +164,7 @@ Token peek_token(Lexer *l) {
         switch(u_char) {
           case 0x00B4: c = '\''; break; //	´ - ACUTE ACCENT
           default:
-            print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+            print_error(l->s.loc);
             printf("Unrecognized unicode character.\n");
             continue;
         }
@@ -187,7 +187,7 @@ Token peek_token(Lexer *l) {
           case 0x275D:                  // ❝  - HEAVY DOUBLE TURNED COMMA QUOTATION MARK ORNAMENT
           case 0x275E: c = '"' ; break; // ❞  - HEAVY DOUBLE COMMA QUOTATION MARK ORNAMENT
           default:
-            print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+            print_error(l->s.loc);
             printf("Unrecognized unicode character.\n");
             continue;
         }
@@ -195,7 +195,7 @@ Token peek_token(Lexer *l) {
       } else {
         // if the five most significant bits are 11110 then the unicode character is 4 utf-8 characters wide.
         // we don't recognize any of these characters (for now, at least)
-        print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+        print_error(l->s.loc);
         printf("Unrecognized unicode character.\n");
         continue;
       }
@@ -213,14 +213,14 @@ Token peek_token(Lexer *l) {
       else if(l->s.to_lex[l->s.i+1] == '/')
         l->s.line_is_commented = true;
       l->s.i++;
-      l->s.current_char++;
+      l->s.loc.character++;
       continue;
     } else if(c == '*' && l->s.to_lex[l->s.i+1] == '/') {
       l->s.comment_level--;
       l->s.i++;
-      l->s.current_char++;
+      l->s.loc.character++;
       if(l->s.comment_level < 0) {
-        print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+        print_error(l->s.loc);
         printf("Unexpected comment end.\n");
       }
       continue;
@@ -236,9 +236,7 @@ Token peek_token(Lexer *l) {
       char *symbol_str = l->s.to_lex + l->s.i;
 
       Token t;
-      t.character = l->s.current_char;
-      t.line = l->s.current_line;
-      t.file_id = l->s.file_id;
+      t.loc = l->s.loc;
 
       if(len == 2 && 0 == memcmp(symbol_str, "fn", 2)) {
         t.type = TFN;
@@ -250,7 +248,7 @@ Token peek_token(Lexer *l) {
       }
 
       l->s.i = l->s.i + len-1;
-      l->s.current_char = l->s.current_char + len-1;
+      l->s.loc.character += len-1;
       return t;
     } else if(isdigit(c)) {
       int len = 0;
@@ -259,20 +257,16 @@ Token peek_token(Lexer *l) {
       int value = atoi(str);
 
       Token t;
-      t.character = l->s.current_char;
-      t.line = l->s.current_line;
-      t.file_id = l->s.file_id;
+      t.loc = l->s.loc;
       t.type = TLITERAL_INT;
       t.data.literal_int = value;
-      l->s.i = l->s.i + len-1;
-      l->s.current_char = l->s.current_char + len-1;
+      l->s.i += len-1;
+      l->s.loc.character += len-1;
       return t;
     } else { // some syntax token
 
       Token t;
-      t.character = l->s.current_char;
-      t.line = l->s.current_line;
-      t.file_id = l->s.file_id;
+      t.loc = l->s.loc;
 
       char next_c = l->s.to_lex[l->s.i+1];
 
@@ -287,12 +281,12 @@ Token peek_token(Lexer *l) {
         case '+': if(next_c == '=') {
                     t.type = TPLUS_EQUALS;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else if(next_c == '+') {
                     t.type = TDOUBLE_PLUS;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TPLUS;
@@ -301,17 +295,17 @@ Token peek_token(Lexer *l) {
         case '-': if(next_c == '>') {
                     t.type = TARROW;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else if(next_c == '=') {
                     t.type = TMINUS_EQUALS;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else if(next_c == '-') {
                     t.type = TDOUBLE_MINUS;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   }else {
                     t.type = TMINUS;
@@ -324,7 +318,7 @@ Token peek_token(Lexer *l) {
         case '&': if(next_c == '&') {
                     t.type = TDOUBLE_AMPERSAND;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TAMPERSAND;
@@ -333,7 +327,7 @@ Token peek_token(Lexer *l) {
         case '|': if(next_c == '|') {
                     t.type = TDOUBLE_OR;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TOR;
@@ -342,7 +336,7 @@ Token peek_token(Lexer *l) {
         case '^': if(next_c == '^') {
                     t.type = TDOUBLE_XOR;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TXOR;
@@ -352,7 +346,7 @@ Token peek_token(Lexer *l) {
         case '!': if(next_c == '=') {
                     t.type = TNOT_EQUALS;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TNOT;
@@ -361,7 +355,7 @@ Token peek_token(Lexer *l) {
         case '<': if(next_c == '=') {
                     t.type = TLESS_THAN_OR_EQUAL_TO;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TLESS_THAN;
@@ -370,7 +364,7 @@ Token peek_token(Lexer *l) {
         case '>': if(next_c == '=') {
                     t.type = TGREATER_THAN_OR_EQUAL_TO;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TGREATER_THAN;
@@ -381,7 +375,7 @@ Token peek_token(Lexer *l) {
         case '=': if(next_c == '=') {
                     t.type = TDOUBLE_EQUALS;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TEQUALS;
@@ -393,7 +387,7 @@ Token peek_token(Lexer *l) {
         case ':': if(next_c == ':') {
                     t.type = TDOUBLE_COLON;
                     l->s.i++;
-                    l->s.current_char++;
+                    l->s.loc.character++;
                     break;
                   } else {
                     t.type = TCOLON;
@@ -405,7 +399,7 @@ Token peek_token(Lexer *l) {
         case ',': t.type = TCOMMA; break;
         case '$': t.type = TDOLLAR_SIGN; break;
 
-        default: print_error(l->s.file_id, l->s.current_line, l->s.current_char);
+        default: print_error(l->s.loc);
                  printf("Unrecognized special character.\n");
       }
 
@@ -415,5 +409,5 @@ Token peek_token(Lexer *l) {
   }
 
   l->s.finished = true;
-  return eol_token(l->s.file_id, l->s.current_line);
+  return eol_token(l->s.loc);
 }

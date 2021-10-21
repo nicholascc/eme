@@ -6,28 +6,27 @@
 
 #include "ast.h"
 #include "lexer.h"
-#include "error.h"
+#include "errors.h"
 #include "symbol_table.h"
 
 
 
 // if message is NULL, lets the caller print the message
-void error_at_token(char *message, Token t, bool should_exit_now) {
-  print_error(t.file_id, t.line, t.character);
-  if(message) printf("%s\n", message);
+void parse_error(char *message, Location loc, bool should_exit_now) {
+  print_error_message(message, loc);
   if(should_exit_now) exit(1);
   should_exit_after_parsing = true;
 }
 
 void error_unexpected_token(Token t) {
-  error_at_token("The parser did not expect to encounter this token.", t, true);
+  parse_error("The parser did not expect to encounter this token.", t.loc, true);
 }
 
 void expect_and_eat_semicolon(Lexer *l) { // WARNING: will call save_state!
   save_state(l);
   Token semicolon = peek_token(l);
   if(semicolon.type != TSEMICOLON) {
-    error_at_token("The parser did not expect to encounter this token. You might be missing a semicolon.", semicolon, false);
+    parse_error("The parser did not expect to encounter this token. You might be missing a semicolon.", semicolon.loc, false);
     revert_state(l);
   }
 }
@@ -68,9 +67,7 @@ bool is_postfix_operator(Token t) {
 
 Ast_Literal *literal_int_to_ast(Token t) {
   Ast_Literal *n = allocate_ast_node(NODE_LITERAL, sizeof(Ast_Literal));
-  n->n.line = t.line;
-  n->n.character = t.character;
-  n->n.file_id = t.file_id;
+  n->n.loc = t.loc;
   n->type = (Type_Info) {TYPE_UNKNOWN_INT, 0, {0}};
   n->value = t.data.literal_int;
   return n;
@@ -78,18 +75,14 @@ Ast_Literal *literal_int_to_ast(Token t) {
 
 Ast_Symbol *symbol_to_ast(Token t) {
   Ast_Symbol *n = allocate_ast_node(NODE_SYMBOL, sizeof(Ast_Symbol));
-  n->n.line = t.line;
-  n->n.character = t.character;
-  n->n.file_id = t.file_id;
+  n->n.loc = t.loc;
   n->symbol = t.data.symbol;
   return n;
 }
 
 Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
   Ast_Binary_Op *n = allocate_ast_node(NODE_BINARY_OP, sizeof(Ast_Binary_Op));
-  n->n.file_id = op.file_id;
-  n->n.line = op.line;
-  n->n.character = op.character;
+  n->n.loc = op.loc;
 
   Ast_Binary_Op_Type ast_op;
   switch(op.type) {
@@ -114,9 +107,7 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
 
 Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
   Ast_Unary_Op *n = allocate_ast_node(NODE_UNARY_OP, sizeof(Ast_Unary_Op));
-  n->n.file_id = operator.file_id;
-  n->n.line = operator.line;
-  n->n.character = operator.character;
+  n->n.loc = operator.loc;
 
   Ast_Unary_Op_Type ast_op;
   switch(operator.type) {
@@ -142,9 +133,7 @@ Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
 Ast_If *ternary_if_to_ast(Ast_Node *cond, Token op, Ast_Node *first, Ast_Node *second) {
   assert(op.type == TQUESTION_MARK && "(internal compiler error) failed to convert ternary if to AST");
   Ast_If *n = allocate_ast_node(NODE_IF, sizeof(Ast_If));
-  n->n.file_id = op.file_id;
-  n->n.line = op.line;
-  n->n.character = op.character;
+  n->n.loc = op.loc;
 
   n->cond = cond;
   n->first = first;
@@ -321,9 +310,7 @@ Ast_Node *parse_function_call(Lexer *l, Scope *scope, Ast_Node *identifier, Toke
 
 
   Ast_Function_Call *n = allocate_ast_node(NODE_FUNCTION_CALL, sizeof(Ast_Function_Call));
-  n->n.file_id = open_paren.file_id;
-  n->n.line = open_paren.line;
-  n->n.character = open_paren.character;
+  n->n.loc = open_paren.loc;
   assert(n->n.type == NODE_SYMBOL);
   n->identifier = (Ast_Symbol *)identifier;
   n->arguments = args;
@@ -337,9 +324,7 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
   int length;
   char *str = st_get_str_of(t.data.symbol, &length);
   Ast_Primitive_Type *n = allocate_ast_node(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
-  n->n.line = t.line;
-  n->n.character = t.character;
-  n->n.file_id = t.file_id;
+  n->n.loc = t.loc;
   bool is_signed;
   u8 width;
   if(length == 4) {
@@ -347,7 +332,7 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
       is_signed = false;
       width = 64;
     }
-    else error_at_token("I expected a primitive type.", t, true);
+    else parse_error("I expected a primitive type.", t.loc, true);
 
   } else if(length == 3) {
     if(strncmp("int", str, 3) == 0) {
@@ -371,7 +356,7 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
     } else if(strncmp("u64", str, 3) == 0) {
       is_signed = false;
       width = 64;
-    } else error_at_token("I expected a primitive type.", t, true);
+    } else parse_error("I expected a primitive type.", t.loc, true);
 
   } else if(length == 2) {
     if(strncmp("s8", str) == 0) {
@@ -381,8 +366,8 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
       is_signed = false;
       width = 8;
     }
-    else error_at_token("I expected a primitive type.", t, true);
-  } else error_at_token("I expected a primitive type.", t, true);
+    else parse_error("I expected a primitive type.", t.loc, true);
+  } else parse_error("I expected a primitive type.", t.loc, true);
 
   n->type_info.type = TYPE_INT;
   n->type_info.data.integer.is_signed = is_signed;
@@ -410,15 +395,11 @@ Ast_Node *parse_any_statement(Lexer *l, Scope *scope) {
     }
   } else if(first.type == TSEMICOLON) {
     Ast_Node *n = allocate_ast_node(NODE_NULL, sizeof(Ast_Node));
-    n->line = first.line;
-    n->character = first.character;
-    n->file_id = first.file_id;
+    n->loc = first.loc;
     return n;
   } else if(first.type == TRETURN) {
     Ast_Return *n = allocate_ast_node(NODE_RETURN, sizeof(Ast_Return));
-    n->n.line = first.line;
-    n->n.character = first.character;
-    n->n.file_id = first.file_id;
+    n->n.loc = first.loc;
     n->value = parse_expression(l, scope, 0);
     expect_and_eat_semicolon(l);
     return n;
@@ -441,9 +422,7 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
     Ast_Node *value_ast = parse_expression(l, scope, 0);
     expect_and_eat_semicolon(l);
     Ast_Untyped_Decl_Set *n = allocate_ast_node(NODE_UNTYPED_DECL_SET, sizeof(Ast_Untyped_Decl_Set));
-    n->n.line = colon.line;
-    n->n.character = colon.character;
-    n->n.file_id = colon.file_id;
+    n->n.loc = colon.loc;
     n->symbol = id.data.symbol;
     n->value = value_ast;
     n->type_info = UNKNOWN_TYPE_INFO;
@@ -455,9 +434,7 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
     if(equals.type == TSEMICOLON) {
       // just decl
       Ast_Typed_Decl *n = allocate_ast_node(NODE_TYPED_DECL, sizeof(Ast_Typed_Decl));
-      n->n.line = colon.line;
-      n->n.character = colon.character;
-      n->n.file_id = colon.file_id;
+      n->n.loc = colon.loc;
       n->symbol = id.data.symbol;
       n->type = type_ast;
       n->type_info = UNKNOWN_TYPE_INFO;
@@ -467,9 +444,7 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
       Ast_Node *value_ast = parse_expression(l, scope, 0);
       expect_and_eat_semicolon(l);
       Ast_Typed_Decl_Set *n = allocate_ast_node(NODE_TYPED_DECL_SET, sizeof(Ast_Typed_Decl_Set));
-      n->n.line = colon.line;
-      n->n.character = colon.character;
-      n->n.file_id = colon.file_id;
+      n->n.loc = colon.loc;
       n->symbol = id.data.symbol;
       n->type = type_ast;
       n->value = value_ast;
@@ -524,9 +499,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
   assert(first.type == TOPEN_BRACE && "(internal compiler error) block must begin with open brace");
 
   Ast_Block *result = allocate_ast_node(NODE_BLOCK, sizeof(Ast_Block));
-  result->n.line = first.line;
-  result->n.character = first.character;
-  result->n.file_id = first.file_id;
+  result->n.loc = first.loc;
   Ast_Node_Ptr_Array *statements = &result->statements;
   *statements = init_Ast_Node_Ptr_Array(2);
   Scope *scope = &result->scope;
@@ -541,7 +514,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
     if(next.type == TCLOSE_BRACE)
       return result;
     else if(next.type == TEOL)
-      error_at_token("'{' has no matching '}'", first, true);
+      parse_error("'{' has no matching '}'", first.loc, true);
     revert_state(l);
 
     Ast_Node *node = parse_any_statement(l, scope);
@@ -559,8 +532,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
       e.declaration.node = node;
       Scope_Entry_Array_push(&scope->entries, e);
     } else if(node->type == NODE_FUNCTION_DEFINITION) {
-      error_at_ast_node("Function definitions are only allowed in the global scope.", *node);
-      should_exit_after_parsing = true;
+      parse_error("Function definitions are only allowed in the global scope.", node->loc, false);
     }
   }
 }
@@ -571,7 +543,7 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");
   Token fn = peek_token(l);
 
-  if(fn.type != TFN) error_at_token("Unexpected token. Only function definitions (using 'fn') are currently supported.", fn, true);
+  if(fn.type != TFN) parse_error("Unexpected token. Only function definitions (using 'fn') are currently supported.", fn.loc, true);
 
   Token open_paren = peek_token(l);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
@@ -580,15 +552,13 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   if(close_paren.type != TCLOSE_PAREN) error_unexpected_token(close_paren);
 
   Token arrow = peek_token(l);
-  if(arrow.type != TARROW) error_at_token("Unexpected token, expected '->'.", arrow, true);
+  if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
 
   Ast_Node *return_type = parse_type(l, scope);
   Ast_Node *body = parse_block(l, scope);
 
   Ast_Function_Definition *n = allocate_ast_node(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
-  n->n.file_id = double_colon.file_id;
-  n->n.line = double_colon.line;
-  n->n.character = double_colon.character;
+  n->n.loc = double_colon.loc;
 
   n->symbol = identifier.data.symbol;
   n->return_type = return_type;

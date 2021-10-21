@@ -216,8 +216,3 @@ void print_type_info(Type_Info t) { // @Incomplete this should probably be bette
       printf("(unprintable type)"); break;
   }
 }
-
-void error_at_ast_node(char *message, Ast_Node n) {
-  print_error(n.file_id, n.line, n.character);
-  if(message) printf("%s\n", message);
-}

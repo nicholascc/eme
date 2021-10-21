@@ -8,9 +8,9 @@
 #include "symbol_table.h"
 #include "parser.h"
 #include "files.h"
-#include "error.h"
+#include "errors.h"
 #include "type_inference.h"
-#include "code_generation.h"
+
 
 
 int main(void) {
@@ -35,10 +35,6 @@ int main(void) {
     printf("An error occurred during type inference, exiting.\n");
     exit(1);
   }
-
-  FILE *out = fopen("out/out.c", "w+");
-  ast_to_c(*ast, out);
-  fclose(out);
 
   return 0;
 }
