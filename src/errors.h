@@ -24,6 +24,9 @@ void print_error(Location l);
 // Prints the error followed by the string message if message is non-null.
 void print_error_message(char *message, Location l);
 
+// Just prints s and exits.
+void print_and_exit(char *s);
+
 
 // Given a file id and a line number, prints that line out in the below format:
 

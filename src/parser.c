@@ -218,6 +218,7 @@ u8 prefix_op_binding_power(Token_Type type) {
 }
 
 Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power) {
+  save_state(l);
   Token lhs = peek_token(l);
   Ast_Node *lhs_ast;
 
@@ -232,6 +233,9 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power) {
     Ast_Node *operand_ast = parse_expression(l, scope, power);
     lhs_ast = unary_op_to_ast(lhs, operand_ast, true);
 
+  } else if(lhs.type == TOPEN_BRACE) {
+    revert_state(l);
+    lhs_ast = parse_block(l, scope);
   } else if(lhs.type == TOPEN_PAREN) {
     lhs_ast = parse_expression(l, scope, 0);
 
@@ -473,7 +477,10 @@ Ast *parse_file(Lexer *l) {
     Ast_Node *node = parse_any_statement(l, &result->scope);
     Compilation_Unit *unit = allocate_null_compilation_unit();
     unit->type_inferred = false;
-    unit->seen_in_type_inference = false;
+    unit->type_inference_seen = false;
+    unit->bytecode_generated = false;
+    unit->bytecode_generation_seen = false;
+    unit->poisoned = false;
     unit->node = node;
     Compilation_Unit_Ptr_Array_push(&result->compilation_units, unit);
 

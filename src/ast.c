@@ -149,6 +149,7 @@ void print_ast_node(Ast_Node *node) {
       print_ast_node(n->type);
       printf(" = ");
       print_ast_node(n->value);
+      break;
     }
 
     case NODE_UNTYPED_DECL_SET: {

@@ -82,16 +82,25 @@ typedef struct Ast_Node {
 
 GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
+typedef struct Bytecode_Function Bytecode_Function;
+
 typedef struct Compilation_Unit {
   bool type_inferred;
-  bool seen_in_type_inference;
+  bool type_inference_seen;
+  bool bytecode_generated;
+  bool bytecode_generation_seen;
+  bool poisoned;
   Ast_Node *node;
+  union {
+    Bytecode_Function *function;
+  } bytecode;
 } Compilation_Unit;
 
 GENERATE_DARRAY_HEADER(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 
 typedef struct Scope_Entry {
   u64 symbol;
+  u32 register_id;
   union {
     Ast_Node *node;
     Compilation_Unit *unit;
@@ -146,6 +155,7 @@ typedef struct Ast_Binary_Op {
   Ast_Binary_Op_Type operator;
   Ast_Node *first;
   Ast_Node *second;
+  Type_Info type;
 } Ast_Binary_Op;
 
 typedef enum Ast_Unary_Op_Type {
@@ -162,6 +172,7 @@ typedef struct Ast_Unary_Op {
   Ast_Node n;
   Ast_Unary_Op_Type operator;
   Ast_Node *operand;
+  Type_Info type;
 } Ast_Unary_Op;
 
 typedef struct Ast_If {

@@ -146,43 +146,23 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
 }
 
 Type_Info infer_type_info_of_decl_unit(Compilation_Unit *unit, Scope *scope) {
-  if(unit->seen_in_type_inference && !unit->type_inferred) {
+  if(unit->type_inference_seen && !unit->type_inferred) {
     type_inference_error("I found a circular dependency at this node.", unit->node->loc);
     exit(1);
   }
-  unit->seen_in_type_inference = true;
+  unit->type_inference_seen = true;
   Type_Info r = infer_type_info_of_decl(unit->node, scope);
   unit->type_inferred = true;
   return r;
 }
 
-
-Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
+// DO NOT HOLD THE RETURNED POINTER!
+Scope_Entry *get_entry_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
   while(true) {
     for(int i = 0; i < scope->entries.length; i++) {
-      Scope_Entry e = scope->entries.data[i];
-      if(e.symbol == symbol) {
-        if(!scope->is_ordered)
-          return infer_type_info_of_decl_unit(e.declaration.unit, scope);
-        else {
-          Ast_Node *node = e.declaration.node;
-          if(node->type == NODE_TYPED_DECL) {
-            Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
-            assert(n->type_info.type != TYPE_UNKNOWN);
-            return n->type_info;
-          } else if(node->type == NODE_TYPED_DECL_SET) {
-            Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
-            assert(n->type_info.type != TYPE_UNKNOWN);
-            return n->type_info;
-          } else if(node->type == NODE_UNTYPED_DECL_SET) {
-            Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
-            assert(n->type_info.type != TYPE_UNKNOWN);
-            return n->type_info;
-          }
-          type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration.", node->loc);
-          exit(1);
-        }
-      }
+      Scope_Entry *e = &scope->entries.data[i];
+      if(e->symbol == symbol)
+        return e;
     }
 
     if(scope->has_parent)
@@ -192,6 +172,31 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
   }
   type_inference_error("This variable is undefined in this scope.", node->loc);
   exit(1);
+}
+
+Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
+  Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, node);
+
+  if(!scope->is_ordered)
+    return infer_type_info_of_decl_unit(e->declaration.unit, scope);
+  else {
+    Ast_Node *node = e->declaration.node;
+    if(node->type == NODE_TYPED_DECL) {
+      Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
+      assert(n->type_info.type != TYPE_UNKNOWN);
+      return n->type_info;
+    } else if(node->type == NODE_TYPED_DECL_SET) {
+      Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
+      assert(n->type_info.type != TYPE_UNKNOWN);
+      return n->type_info;
+    } else if(node->type == NODE_UNTYPED_DECL_SET) {
+      Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
+      assert(n->type_info.type != TYPE_UNKNOWN);
+      return n->type_info;
+    }
+    type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration.", node->loc);
+    exit(1);
+  }
 }
 
 Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
@@ -215,11 +220,19 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
 
           if(first.type == TYPE_UNKNOWN_INT && second.type == TYPE_UNKNOWN_INT) {
             first.data.unknown_int += second.data.unknown_int;
+            n->type = first;
             return first;
           }
-          if(can_implicitly_cast(first, second)) return second;
-          if(can_implicitly_cast(second, first)) return first;
+          if(can_implicitly_cast(first, second)) {
+            n->type = second;
+            return second;
+          }
+          if(can_implicitly_cast(second, first)) {
+            n->type = first;
+            return first;
+          }
           error_cannot_implicitly_cast(second, first, *node, true);
+          n->type = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
 
@@ -229,9 +242,16 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
           }
           Type_Info left = infer_type_of_expr(n->first, scope);
           Type_Info right = infer_type_of_expr(n->second, scope);
-          if(left.type == TYPE_POISON || right.type == TYPE_POISON) return POISON_TYPE_INFO;
-          if(can_implicitly_cast(right, left)) return left;
+          if(left.type == TYPE_POISON || right.type == TYPE_POISON) {
+            n->type = POISON_TYPE_INFO;
+            return POISON_TYPE_INFO;
+          }
+          if(can_implicitly_cast(right, left)) {
+            n->type = left;
+            return left;
+          }
           error_cannot_implicitly_cast(right, left, *node, false);
+          n->type = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
 
@@ -281,6 +301,8 @@ Type_Info infer_types_of_block(Ast_Node *node_block) {
       }
 
       case NODE_RETURN: {
+        Ast_Return *n = node;
+        infer_type_of_expr(n->value, &block->scope);
         break;
       }
 
@@ -302,29 +324,32 @@ Type_Info infer_types_of_block(Ast_Node *node_block) {
   return last_statement_type;
 }
 
-void infer_types_of_ast(Ast *ast) {
-  assert(!ast->scope.is_ordered && !ast->scope.has_parent);
-  for(int i = 0; i < ast->scope.entries.length; i++) {
-    Scope_Entry entry = ast->scope.entries.data[i];
-    Compilation_Unit *unit = entry.declaration.unit;
-    unit->seen_in_type_inference = true;
-    Ast_Node *decl = unit->node;
-    switch(decl->type) {
-      case NODE_UNTYPED_DECL_SET:
-      case NODE_TYPED_DECL_SET:
-      case NODE_TYPED_DECL: {
-        infer_type_info_of_decl(decl, &ast->scope);
-        break;
-      }
-      case NODE_FUNCTION_DEFINITION: {
-        infer_types_of_block(((Ast_Function_Definition*)decl)->body);
-        break;
-      }
-      default:
-        type_inference_error("Internal compiler error: This node referred to by a scope entry is not a declaration",
-                             decl->loc);
-        exit(1);
-    }
-    unit->type_inferred = true;
+void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
+  if(unit->type_inference_seen) {
+    type_inference_error("I found a circular dependency at this node.", unit->node->loc);
+    exit(1);
   }
+  unit->type_inference_seen = true;
+  Ast_Node *decl = unit->node;
+  switch(decl->type) {
+    case NODE_UNTYPED_DECL_SET:
+    case NODE_TYPED_DECL_SET:
+    case NODE_TYPED_DECL: {
+      if(infer_type_info_of_decl(decl, scope).type == TYPE_POISON) {
+        unit->poisoned = true;
+      }
+      break;
+    }
+    case NODE_FUNCTION_DEFINITION: {
+      if(infer_types_of_block(((Ast_Function_Definition*)decl)->body).type == TYPE_POISON) {
+        unit->poisoned = true;
+      }
+      break;
+    }
+    default:
+      type_inference_error("Internal compiler error: This node referred to by a scope entry is not a declaration",
+                           decl->loc);
+      exit(1);
+  }
+  unit->type_inferred = true;
 }
