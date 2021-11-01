@@ -363,10 +363,10 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
     } else parse_error("I expected a primitive type.", t.loc, true);
 
   } else if(length == 2) {
-    if(strncmp("s8", str) == 0) {
+    if(strncmp("s8", str, 2) == 0) {
       is_signed = true;
       width = 8;
-    } else if(strncmp("u8", str) == 0) {
+    } else if(strncmp("u8", str, 2) == 0) {
       is_signed = false;
       width = 8;
     }
@@ -384,10 +384,8 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
 Ast_Node *parse_any_statement(Lexer *l, Scope *scope) {
   save_state(l);
   Token first = peek_token(l);
-  if(first.type == TOPEN_BRACE) {
-    revert_state(l);
-    return parse_block(l, scope);
-  } else if(first.type == TSYMBOL) { // could be decl, definition, or expression
+
+  if(first.type == TSYMBOL) { // could be decl, definition, or expression
     Token second = peek_token(l);
 
     if(second.type == TCOLON) {
