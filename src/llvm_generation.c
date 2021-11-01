@@ -47,13 +47,19 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           u8 c_width = c_type.data.integer.width;
 
           if(b_width < a_width) {
-            b = LLVMBuildZExt(builder, b, LLVMIntType(a_width), "");
+            if(b_type.data.integer.is_signed)
+              b = LLVMBuildSExt(builder, b, LLVMIntType(a_width), "");
+            else
+              b = LLVMBuildZExt(builder, b, LLVMIntType(a_width), "");
           } else if(b_width > a_width) {
             b = LLVMBuildTrunc(builder, b, LLVMIntType(a_width), "");
           }
 
           if(c_width < a_width) {
-            c = LLVMBuildZExt(builder, c, LLVMIntType(a_width), "");
+            if(c_type.data.integer.is_signed)
+              c = LLVMBuildSExt(builder, c, LLVMIntType(a_width), "");
+            else
+              c = LLVMBuildZExt(builder, c, LLVMIntType(a_width), "");
           } else if(c_width > a_width) {
             c = LLVMBuildTrunc(builder, c, LLVMIntType(a_width), "");
           }
@@ -78,7 +84,10 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           u8 b_width = b_type.data.integer.width;
 
           if(b_width < a_width) {
-            r[inst.data.basic_op.reg_a] = LLVMBuildZExt(builder, b, LLVMIntType(a_width), "");
+            if(b_type.data.integer.is_signed)
+              r[inst.data.basic_op.reg_a] = LLVMBuildSExt(builder, b, LLVMIntType(a_width), "");
+            else
+              r[inst.data.basic_op.reg_a] = LLVMBuildZExt(builder, b, LLVMIntType(a_width), "");
           } else if(b_width > a_width) {
             r[inst.data.basic_op.reg_a] = LLVMBuildTrunc(builder, b, LLVMIntType(a_width), "");
           } else {
