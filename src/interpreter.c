@@ -48,6 +48,7 @@ void interpret_bytecode_function(Bytecode_Function fn) {
         break;
       }
       case BC_BRANCH:
+      case BC_COND_BRANCH:
       default: {
         printf("Encountered unknown bytecode instruction.\n");
         print_bytecode_instruction(inst);

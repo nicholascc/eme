@@ -36,7 +36,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       break;
     }
     case BC_COND_BRANCH: {
-      printf("COND_BRANCH %i IF %i\n", inst.data.cond_branch.block, inst.data.cond_branch.reg_cond);
+      printf("COND_BRANCH %i ? %i : %i\n", inst.data.cond_branch.reg_cond, inst.data.cond_branch.block_true, inst.data.cond_branch.block_false);
       break;
     }
     default: {

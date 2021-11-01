@@ -47,7 +47,8 @@ typedef struct Bytecode_Instruction {
 
     struct {
       u32 reg_cond;
-      u32 block;
+      u32 block_true;
+      u32 block_false;
     } cond_branch;
   } data;
 } Bytecode_Instruction;

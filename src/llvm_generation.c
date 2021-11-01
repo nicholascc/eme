@@ -107,6 +107,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           break;
         }
         case BC_BRANCH:
+        case BC_COND_BRANCH:
         default: {
           printf("Encountered unknown bytecode instruction.\n");
           print_bytecode_instruction(inst);
