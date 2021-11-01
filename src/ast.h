@@ -16,6 +16,7 @@ typedef enum Type_Info_Type {
 
   TYPE_INT,
   TYPE_UNKNOWN_INT,
+  TYPE_BOOL,
 
   TYPE_STRUCT,
   TYPE_ARRAY
@@ -43,6 +44,7 @@ typedef struct Type_Info {
 Type_Info UNKNOWN_TYPE_INFO;
 Type_Info NOTHING_TYPE_INFO;
 Type_Info POISON_TYPE_INFO;
+Type_Info BOOL_TYPE_INFO;
 
 typedef enum Ast_Node_Type {
   NODE_NULL,
@@ -143,6 +145,11 @@ typedef enum Ast_Binary_Op_Type {
   OPSET_EQUALS,
   OPPLUS_EQUALS,
   OPMINUS_EQUALS,
+
+  OPLESS_THAN,
+  OPLESS_THAN_OR_EQUAL_TO,
+  OPGREATER_THAN,
+  OPGREATER_THAN_OR_EQUAL_TO,
 
   OPSTRUCT_MEMBER,
   OPSUBSCRIPT,

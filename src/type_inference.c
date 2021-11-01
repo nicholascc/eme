@@ -66,9 +66,7 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
 
     return true;
   } else if(before.type == TYPE_UNKNOWN_INT && after.type == TYPE_UNKNOWN_INT) {
-    type_inference_error("Internal compiler error: Cannot implicitly cast a literal integer to a literal integer.",
-                         NULL_LOCATION);
-    exit(1);
+    return true;
   }
   return false;
 }
@@ -114,7 +112,7 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
     Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)decl;
     if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(n->value, scope);
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true);
     Type_Info given_type = type_info_of_type_expr(n->type);
 
     if(inferred_type.type == TYPE_POISON || given_type.type == TYPE_POISON) {
@@ -135,7 +133,7 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
     Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)decl;
     if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(n->value, scope);
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true);
     n->type_info = solidify_type(inferred_type, n->n);
     return inferred_type;
 
@@ -199,7 +197,7 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
   }
 }
 
-Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
+Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
   switch(node->type) {
     case NODE_LITERAL:
       return ((Ast_Literal*)node)->type;
@@ -210,8 +208,8 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
         case OPMINUS:
         case OPMUL:
         case OPDIV: {
-          Type_Info first = infer_type_of_expr(n->first, scope);
-          Type_Info second = infer_type_of_expr(n->second, scope);
+          Type_Info first = infer_type_of_expr(n->first, scope, true);
+          Type_Info second = infer_type_of_expr(n->second, scope, true);
           if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
 
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
@@ -236,12 +234,25 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
           return POISON_TYPE_INFO;
         }
 
+        case OPLESS_THAN:
+        case OPLESS_THAN_OR_EQUAL_TO:
+        case OPGREATER_THAN:
+        case OPGREATER_THAN_OR_EQUAL_TO: {
+          Type_Info first = infer_type_of_expr(n->first, scope, true);
+          Type_Info second = infer_type_of_expr(n->second, scope, true);
+          if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
+          if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
+             (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
+            type_inference_error("The operands to a comparison operator must be integers.", node->loc);
+          return BOOL_TYPE_INFO;
+        }
+
         case OPSET_EQUALS: {
           if(!scope->is_ordered) {
             type_inference_error("You cannot use a set statement outside of a block.", node->loc);
           }
-          Type_Info left = infer_type_of_expr(n->first, scope);
-          Type_Info right = infer_type_of_expr(n->second, scope);
+          Type_Info left = infer_type_of_expr(n->first, scope, true);
+          Type_Info right = infer_type_of_expr(n->second, scope, true);
           if(left.type == TYPE_POISON || right.type == TYPE_POISON) {
             n->type = POISON_TYPE_INFO;
             return POISON_TYPE_INFO;
@@ -265,8 +276,24 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
       return get_type_of_identifier_in_scope(((Ast_Symbol*)node)->symbol, scope, node);
     }
     case NODE_BLOCK: {
-      return infer_types_of_block(node);
-      break;
+      return infer_types_of_block(node, using_result);
+    }
+    case NODE_IF: {
+      Ast_If *n = node;
+      Type_Info cond = infer_type_of_expr(n->cond, scope, true);
+      if(cond.type != TYPE_BOOL) print_error_message("The conditional of an if statement must be a boolean value.", n->cond->loc);
+      Type_Info first = infer_type_of_expr(n->first, scope, using_result);
+      Type_Info second = infer_type_of_expr(n->second, scope, using_result);
+      if(using_result) {
+        if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
+        if(can_implicitly_cast(first, second))
+          return second;
+        if(can_implicitly_cast(second, first))
+          return first;
+        error_cannot_implicitly_cast(second, first, *node, true);
+        return POISON_TYPE_INFO;
+      }
+      return NOTHING_TYPE_INFO;
     }
     default: {
       type_inference_error("I cannot infer the type of this expression yet.", node->loc);
@@ -275,12 +302,13 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope) {
   }
 }
 
-Type_Info infer_types_of_block(Ast_Node *node_block) {
+Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
   assert(node_block->type == NODE_BLOCK);
   Type_Info last_statement_type = NOTHING_TYPE_INFO;
   Ast_Block *block = (Ast_Block *) node_block;
   for(int i = 0; i < block->statements.length; i++) {
     Ast_Node *node = block->statements.data[i];
+    bool is_last_statement = i == block->statements.length-1;
     switch(node->type) {
       case NODE_LITERAL:
       case NODE_BINARY_OP:
@@ -289,7 +317,7 @@ Type_Info infer_types_of_block(Ast_Node *node_block) {
       case NODE_FUNCTION_CALL:
       case NODE_SYMBOL:
       case NODE_BLOCK: {
-        last_statement_type = infer_type_of_expr(node, &block->scope);
+        last_statement_type = infer_type_of_expr(node, &block->scope, is_last_statement);
         break;
       }
 
@@ -302,7 +330,7 @@ Type_Info infer_types_of_block(Ast_Node *node_block) {
 
       case NODE_RETURN: {
         Ast_Return *n = node;
-        infer_type_of_expr(n->value, &block->scope);
+        infer_type_of_expr(n->value, &block->scope, true);
         break;
       }
 
@@ -321,7 +349,7 @@ Type_Info infer_types_of_block(Ast_Node *node_block) {
       }
     }
   }
-  return last_statement_type;
+  return using_result ? last_statement_type : NOTHING_TYPE_INFO;
 }
 
 void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
@@ -341,7 +369,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
       break;
     }
     case NODE_FUNCTION_DEFINITION: {
-      if(infer_types_of_block(((Ast_Function_Definition*)decl)->body).type == TYPE_POISON) {
+      if(infer_types_of_block(((Ast_Function_Definition*)decl)->body, false).type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;

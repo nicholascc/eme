@@ -181,9 +181,8 @@ u32 generate_bytecode_expr(Ast_Node *node, Bytecode_Block *block, Bytecode_Funct
       Bytecode_Block_push(block, inst);
       return -1;
     }
-
-    case NODE_UNARY_OP:
     case NODE_IF:
+    case NODE_UNARY_OP:
     case NODE_FUNCTION_CALL:
     case NODE_FUNCTION_DEFINITION:
     case NODE_NULL:

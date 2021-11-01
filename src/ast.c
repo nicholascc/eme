@@ -11,6 +11,7 @@ GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
 Type_Info NOTHING_TYPE_INFO = {TYPE_NOTHING, 0, {0}};
 Type_Info POISON_TYPE_INFO  = {TYPE_POISON,  0, {0}};
+Type_Info BOOL_TYPE_INFO = {TYPE_BOOL, 0, {0}};
 
 
 Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size) {
@@ -80,6 +81,11 @@ void print_ast_node(Ast_Node *node) {
         case OPSET_EQUALS: printf(" = "); break;
         case OPPLUS_EQUALS: printf(" += "); break;
         case OPMINUS_EQUALS: printf(" -= "); break;
+
+        case OPLESS_THAN: printf(" < "); break;
+        case OPLESS_THAN_OR_EQUAL_TO: printf(" <= "); break;
+        case OPGREATER_THAN: printf(" > "); break;
+        case OPGREATER_THAN_OR_EQUAL_TO: printf(" >= "); break;
 
         case OPSTRUCT_MEMBER: printf("."); break;
         case OPSUBSCRIPT: printf("["); break;

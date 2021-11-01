@@ -41,6 +41,10 @@ bool is_non_unary_operator(Token t) {
     case TEQUALS:
     case TPLUS_EQUALS:
     case TMINUS_EQUALS:
+    case TLESS_THAN:
+    case TLESS_THAN_OR_EQUAL_TO:
+    case TGREATER_THAN:
+    case TGREATER_THAN_OR_EQUAL_TO:
     case TDOT:
     case TQUESTION_MARK:
       return true;
@@ -94,6 +98,10 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TEQUALS: ast_op = OPSET_EQUALS; break;
     case TPLUS_EQUALS: ast_op = OPPLUS_EQUALS; break;
     case TMINUS_EQUALS: ast_op = OPMINUS_EQUALS; break;
+    case TLESS_THAN: ast_op = OPLESS_THAN; break;
+    case TLESS_THAN_OR_EQUAL_TO: ast_op = OPLESS_THAN_OR_EQUAL_TO; break;
+    case TGREATER_THAN: ast_op = OPGREATER_THAN; break;
+    case TGREATER_THAN_OR_EQUAL_TO: ast_op = OPGREATER_THAN_OR_EQUAL_TO; break;
     case TDOT: ast_op = OPSTRUCT_MEMBER; break;
     case TOPEN_BRACKET: ast_op = OPSUBSCRIPT; break;
   }
@@ -130,10 +138,9 @@ Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
   return n;
 }
 
-Ast_If *ternary_if_to_ast(Ast_Node *cond, Token op, Ast_Node *first, Ast_Node *second) {
-  assert(op.type == TQUESTION_MARK && "(internal compiler error) failed to convert ternary if to AST");
+Ast_If *if_to_ast(Ast_Node *cond, Location loc, Ast_Node *first, Ast_Node *second) {
   Ast_If *n = allocate_ast_node(NODE_IF, sizeof(Ast_If));
-  n->n.loc = op.loc;
+  n->n.loc = loc;
 
   n->cond = cond;
   n->first = first;
@@ -190,6 +197,12 @@ u8_pair binary_op_binding_power(Token_Type type) {
 
     case TQUESTION_MARK:
       return (u8_pair){4,3};
+
+    case TLESS_THAN:
+    case TLESS_THAN_OR_EQUAL_TO:
+    case TGREATER_THAN:
+    case TGREATER_THAN_OR_EQUAL_TO:
+      return (u8_pair){14,13};
 
     case TPLUS:
     case TMINUS:
@@ -264,7 +277,7 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power) {
         if(next.type != TCOLON)
           error_unexpected_token(next);
         Ast_Node *rhs_ast = parse_expression(l, scope, powers.right);
-        lhs_ast = ternary_if_to_ast(lhs_ast, op, mhs_ast, rhs_ast);
+        lhs_ast = if_to_ast(lhs_ast, op.loc, mhs_ast, rhs_ast);
       } else {
         Ast_Node *rhs_ast = parse_expression(l, scope, powers.right);
         lhs_ast = binary_op_to_ast(lhs_ast, op, rhs_ast);
