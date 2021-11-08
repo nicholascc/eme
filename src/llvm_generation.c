@@ -111,8 +111,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           }
           LLVMIntPredicate pred = conv_type.data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
           LLVMValueRef a = LLVMBuildICmp(builder, pred, b, c, "");
-
-          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
+          LLVMBuildStore(builder, a, r[inst.data.bin_conv_op.reg_a]);
           break;
         }
 

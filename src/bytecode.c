@@ -125,7 +125,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           inst.data.bin_conv_op.conv_type = n->convert_to;
           Type_Info_Array_push(&fn->register_types, BOOL_TYPE_INFO);
           Bytecode_Block_push(&fn->blocks.data[*block], inst);
-          return inst.data.bin_op.reg_a;
+          return inst.data.bin_conv_op.reg_a;
         } // should combine these two cases above into single simplified code
         case OPSET_EQUALS: {
           u64 symbol;
