@@ -80,9 +80,10 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
     r.data.integer.is_signed = true;
     r.data.integer.width = 64;
     return r;
-  } else if(x.type == TYPE_INT)
+  } else if(x.type == TYPE_INT || x.type == TYPE_BOOL)
     return x;
   else {
+    print_type_info(x);
     type_inference_error("I don't know how to make this type concrete.", node.loc);
     return POISON_TYPE_INFO;
   }
@@ -218,19 +219,19 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
 
           if(first.type == TYPE_UNKNOWN_INT && second.type == TYPE_UNKNOWN_INT) {
             first.data.unknown_int += second.data.unknown_int;
-            n->type = first;
+            n->convert_to = solidify_type(first, *node);
             return first;
           }
           if(can_implicitly_cast(first, second)) {
-            n->type = second;
+            n->convert_to = solidify_type(second, *node);
             return second;
           }
           if(can_implicitly_cast(second, first)) {
-            n->type = first;
+            n->convert_to = solidify_type(first, *node);
             return first;
           }
           error_cannot_implicitly_cast(second, first, *node, true);
-          n->type = POISON_TYPE_INFO;
+          n->convert_to = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
 
@@ -244,6 +245,15 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
             type_inference_error("The operands to a comparison operator must be integers.", node->loc);
+          if(can_implicitly_cast(first, second))
+            n->convert_to = solidify_type(second, *node);
+          else if(can_implicitly_cast(second, first))
+            n->convert_to = solidify_type(first, *node);
+          else {
+            error_cannot_implicitly_cast(second, first, *node, true);
+            n->convert_to = POISON_TYPE_INFO;
+            return POISON_TYPE_INFO;
+          }
           return BOOL_TYPE_INFO;
         }
 
@@ -254,15 +264,15 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
           Type_Info left = infer_type_of_expr(n->first, scope, true);
           Type_Info right = infer_type_of_expr(n->second, scope, true);
           if(left.type == TYPE_POISON || right.type == TYPE_POISON) {
-            n->type = POISON_TYPE_INFO;
+            n->convert_to = POISON_TYPE_INFO;
             return POISON_TYPE_INFO;
           }
           if(can_implicitly_cast(right, left)) {
-            n->type = left;
+            n->convert_to = solidify_type(left, *node);
             return left;
           }
           error_cannot_implicitly_cast(right, left, *node, false);
-          n->type = POISON_TYPE_INFO;
+          n->convert_to = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
 
@@ -280,6 +290,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
     }
     case NODE_IF: {
       Ast_If *n = node;
+      n->result_is_used = using_result;
       Type_Info cond = infer_type_of_expr(n->cond, scope, true);
       if(cond.type != TYPE_BOOL) print_error_message("The conditional of an if statement must be a boolean value.", n->cond->loc);
       Type_Info first = infer_type_of_expr(n->first, scope, using_result);

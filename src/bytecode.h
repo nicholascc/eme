@@ -10,6 +10,8 @@ typedef enum Bytecode_Instruction_Type {
   BC_ADD,
   BC_SUB,
 
+  BC_LESS_THAN,
+
   BC_SET,
   BC_SET_LITERAL,
 
@@ -35,7 +37,14 @@ typedef struct Bytecode_Instruction {
       u32 reg_a;
       u32 reg_b;
       u32 reg_c;
-    } basic_op;
+    } bin_op;
+
+    struct {
+      Type_Info conv_type;
+      u32 reg_a;
+      u32 reg_b;
+      u32 reg_c;
+    } bin_conv_op; // Binary operator where the type to convert to must be specified. E.g. comparisons
 
     struct {
       u32 reg;

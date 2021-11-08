@@ -218,6 +218,7 @@ void print_type_info(Type_Info t) { // @Incomplete this should probably be bette
       else printf("u%i", t.data.integer.width);
       break;
     }
+    case TYPE_BOOL: printf("bool"); break;
     case TYPE_UNKNOWN_INT: printf("literal integer"); break;
     default:
       printf("(unprintable type)"); break;

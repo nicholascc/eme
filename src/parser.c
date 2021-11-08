@@ -141,7 +141,7 @@ Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
 Ast_If *if_to_ast(Ast_Node *cond, Location loc, Ast_Node *first, Ast_Node *second) {
   Ast_If *n = allocate_ast_node(NODE_IF, sizeof(Ast_If));
   n->n.loc = loc;
-
+  n->result_is_used = false;
   n->cond = cond;
   n->first = first;
   n->second = second;

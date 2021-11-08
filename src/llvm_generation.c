@@ -11,8 +11,33 @@
 #include <llvm-c/Target.h>
 #include <llvm-c/Transforms/PassManagerBuilder.h>
 #include <llvm-c/BitWriter.h>
-#include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
+
+LLVMTypeRef llvm_type_of(Type_Info type) {
+  if(type.type == TYPE_INT) {
+    return LLVMIntType(type.data.integer.width);
+  } else if(type.type == TYPE_BOOL) {
+    return LLVMIntType(1);
+  } else {
+    assert(false);
+  }
+}
+
+LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type_Info a_type, Type_Info b_type) {
+  assert(a_type.type == TYPE_INT &&
+         b_type.type == TYPE_INT);
+  u8 a_width = a_type.data.integer.width;
+  u8 b_width = b_type.data.integer.width;
+  if(a_width < b_width) {
+    if(a_type.data.integer.is_signed)
+      return LLVMBuildSExt(builder, a, LLVMIntType(b_width), "");
+    else
+      return LLVMBuildZExt(builder, a, LLVMIntType(b_width), "");
+  } else if(a_width > b_width)
+    return LLVMBuildTrunc(builder, a, LLVMIntType(b_width), "");
+  else
+    return a;
+}
 
 
 void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_Function fn) {
@@ -21,12 +46,26 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
   LLVMValueRef llf = LLVMAddFunction(mod, "eme", LLVMFunctionType(LLVMInt64Type(), NULL, 0, 0));
   LLVMSetFunctionCallConv(llf, LLVMCCallConv);
 
-  // THIS WILL NOT WORK FOR BRANCHES - IT IS JUST A HACK TO GET US STARTED!
+  LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(llf, "");
+
+  LLVMBasicBlockRef *llblocks = malloc(sizeof(LLVMBasicBlockRef) * fn.blocks.length);
+  for(int i = 0; i < fn.blocks.length; i++) {
+    llblocks[i] = LLVMAppendBasicBlock(llf, "");
+  }
+
   LLVMValueRef *r = malloc(fn.register_types.length * sizeof(LLVMValueRef));
+  {
+    LLVMPositionBuilderAtEnd(builder, entry_block);
+    for(int i = 0; i < fn.register_types.length; i++) {
+      LLVMTypeRef type = llvm_type_of(fn.register_types.data[i]);
+      r[i] = LLVMBuildAlloca(builder, type, "");
+    }
+    LLVMBuildBr(builder, llblocks[fn.entry_block]);
+  }
 
   for(int i = 0; i < fn.blocks.length; i++) {
     Bytecode_Block block = fn.blocks.data[i];
-    LLVMBasicBlockRef llb = LLVMAppendBasicBlock(llf, "");
+    LLVMBasicBlockRef llb = llblocks[i];
     LLVMPositionBuilderAtEnd(builder, llb);
 
     for(int j = 0; j < block.length; j++) {
@@ -34,80 +73,83 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
       switch(inst.type) {
         case BC_ADD:
         case BC_SUB: {
-          LLVMValueRef b = r[inst.data.basic_op.reg_b];
-          LLVMValueRef c = r[inst.data.basic_op.reg_c];
-          Type_Info a_type = fn.register_types.data[inst.data.basic_op.reg_a];
-          Type_Info b_type = fn.register_types.data[inst.data.basic_op.reg_b];
-          Type_Info c_type = fn.register_types.data[inst.data.basic_op.reg_c];
-          assert(a_type.type == TYPE_INT &&
-                 b_type.type == TYPE_INT &&
-                 c_type.type == TYPE_INT);
-          u8 a_width = a_type.data.integer.width;
-          u8 b_width = b_type.data.integer.width;
-          u8 c_width = c_type.data.integer.width;
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
+          LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
 
-          if(b_width < a_width) {
-            if(b_type.data.integer.is_signed)
-              b = LLVMBuildSExt(builder, b, LLVMIntType(a_width), "");
-            else
-              b = LLVMBuildZExt(builder, b, LLVMIntType(a_width), "");
-          } else if(b_width > a_width) {
-            b = LLVMBuildTrunc(builder, b, LLVMIntType(a_width), "");
+          {
+            Type_Info a_type = fn.register_types.data[inst.data.bin_op.reg_a];
+            Type_Info b_type = fn.register_types.data[inst.data.bin_op.reg_b];
+            Type_Info c_type = fn.register_types.data[inst.data.bin_op.reg_c];
+
+            b = generate_llvm_cast(builder, b, b_type, a_type);
+            c = generate_llvm_cast(builder, c, c_type, a_type);
           }
 
-          if(c_width < a_width) {
-            if(c_type.data.integer.is_signed)
-              c = LLVMBuildSExt(builder, c, LLVMIntType(a_width), "");
-            else
-              c = LLVMBuildZExt(builder, c, LLVMIntType(a_width), "");
-          } else if(c_width > a_width) {
-            c = LLVMBuildTrunc(builder, c, LLVMIntType(a_width), "");
-          }
-
-          LLVMValueRef result;
+          LLVMValueRef a;
           if(inst.type == BC_ADD) {
-            result = LLVMBuildAdd(builder, b, c, "");
+            a = LLVMBuildAdd(builder, b, c, "");
           } else {
-            result = LLVMBuildSub(builder, b, c, "");
+            a = LLVMBuildSub(builder, b, c, "");
           }
-          r[inst.data.basic_op.reg_a] = result;
+
+          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
+          break;
+        }
+
+        case BC_LESS_THAN: {
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_conv_op.reg_b], "");
+          LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_conv_op.reg_c], "");
+
+          Type_Info conv_type = inst.data.bin_conv_op.conv_type;
+          assert(conv_type.type == TYPE_INT);
+          {
+            Type_Info b_type = fn.register_types.data[inst.data.bin_conv_op.reg_b];
+            Type_Info c_type = fn.register_types.data[inst.data.bin_conv_op.reg_c];
+
+            b = generate_llvm_cast(builder, b, b_type, conv_type);
+            c = generate_llvm_cast(builder, c, c_type, conv_type);
+          }
+          LLVMIntPredicate pred = conv_type.data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
+          LLVMValueRef a = LLVMBuildICmp(builder, pred, b, c, "");
+
+          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;
         }
 
         case BC_SET: {
-          LLVMValueRef b = r[inst.data.basic_op.reg_b];
-          Type_Info a_type = fn.register_types.data[inst.data.basic_op.reg_a];
-          Type_Info b_type = fn.register_types.data[inst.data.basic_op.reg_b];
-          assert(a_type.type == TYPE_INT &&
-                 b_type.type == TYPE_INT);
-          u8 a_width = a_type.data.integer.width;
-          u8 b_width = b_type.data.integer.width;
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.set.reg_b], "");
+          {
 
-          if(b_width < a_width) {
-            if(b_type.data.integer.is_signed)
-              r[inst.data.basic_op.reg_a] = LLVMBuildSExt(builder, b, LLVMIntType(a_width), "");
-            else
-              r[inst.data.basic_op.reg_a] = LLVMBuildZExt(builder, b, LLVMIntType(a_width), "");
-          } else if(b_width > a_width) {
-            r[inst.data.basic_op.reg_a] = LLVMBuildTrunc(builder, b, LLVMIntType(a_width), "");
-          } else {
-            r[inst.data.basic_op.reg_a] = b;
+            Type_Info a_type = fn.register_types.data[inst.data.set.reg_a];
+            Type_Info b_type = fn.register_types.data[inst.data.set.reg_b];
+            b = generate_llvm_cast(builder, b, b_type, a_type);
           }
+
+          LLVMBuildStore(builder, b, r[inst.data.bin_op.reg_a]);
           break;
         }
 
         case BC_SET_LITERAL: {
           Type_Info type = fn.register_types.data[inst.data.set_literal.reg_a];
           assert(type.type == TYPE_INT);
-          r[inst.data.set_literal.reg_a] = LLVMConstInt(LLVMIntType(type.data.integer.width), inst.data.set_literal.lit_b, 0);
+          LLVMValueRef a = LLVMConstInt(LLVMIntType(type.data.integer.width), inst.data.set_literal.lit_b, 0);
+          LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
           break;
         }
         case BC_RETURN: {
-          LLVMBuildRet(builder, r[inst.data.ret.reg]);
+          LLVMValueRef a = LLVMBuildLoad(builder, r[inst.data.ret.reg], "");
+          LLVMBuildRet(builder, a);
           break;
         }
-        case BC_BRANCH:
-        case BC_COND_BRANCH:
+        case BC_BRANCH: {
+          LLVMBuildBr(builder, llblocks[inst.data.branch.block]);
+          break;
+        }
+        case BC_COND_BRANCH: {
+          LLVMValueRef cond = LLVMBuildLoad(builder, r[inst.data.cond_branch.reg_cond], "");
+          LLVMBuildCondBr(builder, cond, llblocks[inst.data.cond_branch.block_true], llblocks[inst.data.cond_branch.block_false]);
+          break;
+        }
         default: {
           printf("Encountered unknown bytecode instruction.\n");
           print_bytecode_instruction(inst);
@@ -117,6 +159,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
     }
   }
 
+  free(llblocks);
   free(r);
 
   LLVMVerifyModule(mod, LLVMAbortProcessAction, &error);
@@ -156,13 +199,13 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
   LLVMInitializeAllAsmPrinters();
 
   const char *triple = LLVMGetDefaultTargetTriple();
-  printf("Compiling for target with triple: %s\n", triple);
+  printf("Compiling for Target with triple: %s\n", triple);
 
-  LLVMTargetRef target;
-  is_error = LLVMGetTargetFromTriple(triple, &target, &error);
+  LLVMTargetRef Target;
+  is_error = LLVMGetTargetFromTriple(triple, &Target, &error);
   if(is_error) print_and_exit(error);
-  LLVMTargetMachineRef target_machine =	LLVMCreateTargetMachine(target, triple, "generic", "", LLVMCodeGenLevelNone, LLVMRelocDefault, LLVMCodeModelDefault);
-  LLVMSetModuleDataLayout(mod, LLVMCreateTargetDataLayout(target_machine));
+  LLVMTargetMachineRef Target_machine =	LLVMCreateTargetMachine(Target, triple, "generic", "", LLVMCodeGenLevelNone, LLVMRelocDefault, LLVMCodeModelDefault);
+  LLVMSetModuleDataLayout(mod, LLVMCreateTargetDataLayout(Target_machine));
   LLVMSetTarget(mod, triple);
 
 
@@ -175,12 +218,12 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
   LLVMDisposePassManager(pass_manager);
 
   if(out_obj) {
-    is_error = LLVMTargetMachineEmitToFile(target_machine, mod, out_obj, LLVMObjectFile, &error);
+    is_error = LLVMTargetMachineEmitToFile(Target_machine, mod, out_obj, LLVMObjectFile, &error);
     if(is_error) print_and_exit(error);
   }
 
   if(out_asm) {
-    is_error = LLVMTargetMachineEmitToFile(target_machine, mod, out_asm, LLVMAssemblyFile, &error);
+    is_error = LLVMTargetMachineEmitToFile(Target_machine, mod, out_asm, LLVMAssemblyFile, &error);
     if(is_error) print_and_exit(error);
   }
 
@@ -190,6 +233,6 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
 
   printf("Done.\n");
 
-  LLVMDisposeTargetMachine(target_machine);
+  LLVMDisposeTargetMachine(Target_machine);
   LLVMDisposeModule(mod);
 }

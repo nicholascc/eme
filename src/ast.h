@@ -162,7 +162,7 @@ typedef struct Ast_Binary_Op {
   Ast_Binary_Op_Type operator;
   Ast_Node *first;
   Ast_Node *second;
-  Type_Info type;
+  Type_Info convert_to;
 } Ast_Binary_Op;
 
 typedef enum Ast_Unary_Op_Type {
@@ -184,6 +184,7 @@ typedef struct Ast_Unary_Op {
 
 typedef struct Ast_If {
   Ast_Node n;
+  bool result_is_used;
   Ast_Node *cond;
   Ast_Node *first;
   Ast_Node *second;
