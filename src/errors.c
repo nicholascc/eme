@@ -33,7 +33,7 @@ void print_error(Location l) {
       print_lines_in_file(l.file_id, l.line, 5);
       printf("Error at line %d: ", l.line);
     } else {
-      printf("Error: ");
+      printf("Error in file [%s]: ", files.data[l.file_id].filename);
     }
   } else {
     printf("Error: ");

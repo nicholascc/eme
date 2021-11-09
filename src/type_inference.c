@@ -306,6 +306,11 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
       }
       return NOTHING_TYPE_INFO;
     }
+
+    case NODE_NULL: {
+      return NOTHING_TYPE_INFO;
+    }
+    
     default: {
       type_inference_error("I cannot infer the type of this expression yet.", node->loc);
       exit(1);
@@ -345,9 +350,12 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
         break;
       }
 
-      case NODE_FUNCTION_DEFINITION:
       case NODE_NULL: {
-        type_inference_error("Null nodes or function definitions are not allowed in a function definition.",
+        break;
+      }
+
+      case NODE_FUNCTION_DEFINITION: {
+        type_inference_error("Function definitions are not allowed in a function definition.",
                              node->loc);
         exit(1);
       }

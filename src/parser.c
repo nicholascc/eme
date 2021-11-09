@@ -230,32 +230,61 @@ u8 prefix_op_binding_power(Token_Type type) {
   }
 }
 
-Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power) {
+// Can pass a null pointer to needs_semicolon if you don't need that information.
+Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_semicolon) {
   save_state(l);
   Token lhs = peek_token(l);
   Ast_Node *lhs_ast;
 
+  bool lhs_needs_semicolon = true;
+
   if(lhs.type == TLITERAL_INT) {
     lhs_ast = literal_int_to_ast(lhs);
+    lhs_needs_semicolon = true;
 
   } else if(lhs.type == TSYMBOL) {
     lhs_ast = symbol_to_ast(lhs);
+    lhs_needs_semicolon = true;
+
+  } else if(lhs.type == TIF) {
+    Ast_Node *cond = parse_expression(l, scope, 0, NULL);
+    Ast_Node *if_true = parse_expression(l, scope, 0, NULL);
+
+    save_state(l);
+    Token t = peek_token(l);
+    Ast_Node *if_false;
+
+    if(t.type == TELSE) {
+      if_false = parse_expression(l, scope, 0, NULL);
+      lhs_ast = if_to_ast(cond, lhs.loc, if_true, if_false);
+    } else {
+      revert_state(l);
+      if_false = allocate_ast_node(NODE_NULL, sizeof(Ast_Node));
+      if_false->loc.file_id = t.loc.file_id;
+      if_false->loc.line = -1;
+      if_false->loc.character = -1;
+    }
+
+    lhs_ast = if_to_ast(cond, lhs.loc, if_true, if_false);
+    lhs_needs_semicolon = false;
 
   } else if(is_prefix_operator(lhs)) {
     u8 power = prefix_op_binding_power(lhs.type);
-    Ast_Node *operand_ast = parse_expression(l, scope, power);
+    Ast_Node *operand_ast = parse_expression(l, scope, power, NULL);
     lhs_ast = unary_op_to_ast(lhs, operand_ast, true);
+    lhs_needs_semicolon = true;
 
   } else if(lhs.type == TOPEN_BRACE) {
     revert_state(l);
     lhs_ast = parse_block(l, scope);
+    lhs_needs_semicolon = false;
   } else if(lhs.type == TOPEN_PAREN) {
-    lhs_ast = parse_expression(l, scope, 0);
+    lhs_ast = parse_expression(l, scope, 0, NULL);
 
     Token next = peek_token(l);
     if(next.type != TCLOSE_PAREN)
       error_unexpected_token(next);
-
+    lhs_needs_semicolon = true;
   } else error_unexpected_token(lhs);
 
 
@@ -272,22 +301,25 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power) {
       }
 
       if(op.type == TQUESTION_MARK) {
-        Ast_Node *mhs_ast = parse_expression(l, scope, 0);
+        Ast_Node *mhs_ast = parse_expression(l, scope, 0, NULL);
         Token next = peek_token(l);
         if(next.type != TCOLON)
           error_unexpected_token(next);
-        Ast_Node *rhs_ast = parse_expression(l, scope, powers.right);
+        Ast_Node *rhs_ast = parse_expression(l, scope, powers.right, NULL);
         lhs_ast = if_to_ast(lhs_ast, op.loc, mhs_ast, rhs_ast);
       } else {
-        Ast_Node *rhs_ast = parse_expression(l, scope, powers.right);
+        Ast_Node *rhs_ast = parse_expression(l, scope, powers.right, NULL);
         lhs_ast = binary_op_to_ast(lhs_ast, op, rhs_ast);
       }
 
+      lhs_needs_semicolon = true;
+
     } else if(is_postfix_operator(op)) {
       lhs_ast = unary_op_to_ast(op, lhs_ast, false);
+      lhs_needs_semicolon = true;
 
     } else if(op.type == TOPEN_BRACKET) {
-      Ast_Node *rhs_ast = parse_expression(l, scope, 0);
+      Ast_Node *rhs_ast = parse_expression(l, scope, 0, NULL);
 
       Token next = peek_token(l);
       if(next.type != TCLOSE_BRACKET) {
@@ -295,14 +327,17 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power) {
       }
 
       lhs_ast = binary_op_to_ast(lhs_ast, op, rhs_ast);
+      lhs_needs_semicolon = true;
     } else if(op.type == TOPEN_PAREN) {
       lhs_ast = parse_function_call(l, scope, lhs_ast, op);
+      lhs_needs_semicolon = true;
     } else {
       revert_state(l);
       break;
     }
   }
 
+  if(needs_semicolon != NULL) *needs_semicolon = lhs_needs_semicolon;
   return lhs_ast;
 }
 
@@ -314,7 +349,7 @@ Ast_Node *parse_function_call(Lexer *l, Scope *scope, Ast_Node *identifier, Toke
   if(first.type != TCLOSE_PAREN) {
     revert_state(l);
     while(1) {
-      Ast_Node *arg = parse_expression(l, scope, 0);
+      Ast_Node *arg = parse_expression(l, scope, 0, NULL);
       Ast_Node_Ptr_Array_push(&args, arg);
       Token t = peek_token(l);
       if(t.type == TCLOSE_PAREN) {
@@ -415,14 +450,15 @@ Ast_Node *parse_any_statement(Lexer *l, Scope *scope) {
   } else if(first.type == TRETURN) {
     Ast_Return *n = allocate_ast_node(NODE_RETURN, sizeof(Ast_Return));
     n->n.loc = first.loc;
-    n->value = parse_expression(l, scope, 0);
+    n->value = parse_expression(l, scope, 0, NULL);
     expect_and_eat_semicolon(l);
     return n;
   }
 
   revert_state(l);
-  Ast_Node *n = parse_expression(l, scope, 0);
-  expect_and_eat_semicolon(l);
+  bool needs_semicolon;
+  Ast_Node *n = parse_expression(l, scope, 0, &needs_semicolon);
+  if(needs_semicolon) expect_and_eat_semicolon(l);
   return n;
 }
 
@@ -434,7 +470,7 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
   Token type = peek_token(l);
 
   if(type.type == TEQUALS) {
-    Ast_Node *value_ast = parse_expression(l, scope, 0);
+    Ast_Node *value_ast = parse_expression(l, scope, 0, NULL);
     expect_and_eat_semicolon(l);
     Ast_Untyped_Decl_Set *n = allocate_ast_node(NODE_UNTYPED_DECL_SET, sizeof(Ast_Untyped_Decl_Set));
     n->n.loc = colon.loc;
@@ -456,7 +492,7 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
       return n;
     } else if(equals.type == TEQUALS) {
       // decl with type and set
-      Ast_Node *value_ast = parse_expression(l, scope, 0);
+      Ast_Node *value_ast = parse_expression(l, scope, 0, NULL);
       expect_and_eat_semicolon(l);
       Ast_Typed_Decl_Set *n = allocate_ast_node(NODE_TYPED_DECL_SET, sizeof(Ast_Typed_Decl_Set));
       n->n.loc = colon.loc;

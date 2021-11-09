@@ -84,6 +84,8 @@ void print_token(Token t) {
 
     case TFN:     printf("fn"); break;
     case TRETURN: printf("return"); break;
+    case TIF:     printf("if"); break;
+    case TELSE:   printf("else"); break;
     default: printf("unknown"); break;
   }
   printf("\")\n");
@@ -238,8 +240,14 @@ Token peek_token(Lexer *l) {
       Token t;
       t.loc = l->s.loc;
 
-      if(len == 2 && 0 == memcmp(symbol_str, "fn", 2)) {
-        t.type = TFN;
+      if(len == 2) {
+        if(0 == memcmp(symbol_str, "fn", 2)) {
+          t.type = TFN;
+        } else if(0 == memcmp(symbol_str, "if", 2)) {
+          t.type = TIF;
+        }
+      } else if(len == 4 && 0 == memcmp(symbol_str, "else", 4)) {
+        t.type = TELSE;
       } else if(len == 6 && 0 == memcmp(symbol_str, "return", 6)) {
         t.type = TRETURN;
       } else {
