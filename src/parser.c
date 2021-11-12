@@ -627,8 +627,25 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   Token open_paren = peek_token(l);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 
-  Token close_paren = peek_token(l);
-  if(close_paren.type != TCLOSE_PAREN) error_unexpected_token(close_paren);
+  Ast_Node_Ptr_Array arguments = init_Ast_Node_Ptr_Array(2);
+  while(1) {
+    Token sym = peek_token(l);
+    if(sym.type != TSYMBOL) error_unexpected_token(sym);
+    Token colon = peek_token(l);
+    if(colon.type != TCOLON) error_unexpected_token(colon);
+
+    Ast_Node *type = parse_type(l, scope);
+    Ast_Function_Argument *arg = allocate_ast_node(NODE_FUNCTION_ARGUMENT, sizeof(Ast_Function_Argument));
+    arg->n.loc = colon.loc;
+    arg->symbol = sym.data.symbol;
+    arg->type = type;
+    arg->type_info = UNKNOWN_TYPE_INFO;
+    Ast_Node_Ptr_Array_push(&arguments, arg);
+    
+    Token next = peek_token(l);
+    if(next.type == TCLOSE_PAREN) break;
+    else if(next.type != TCOMMA) error_unexpected_token(next);
+  }
 
   Token arrow = peek_token(l);
   if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
@@ -640,7 +657,9 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   n->n.loc = double_colon.loc;
 
   n->symbol = identifier.data.symbol;
+  n->arguments = arguments;
   n->return_type = return_type;
+  n->return_type_info = UNKNOWN_TYPE_INFO;
   n->body = body;
   return n;
 }

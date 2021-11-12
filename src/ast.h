@@ -61,6 +61,7 @@ typedef enum Ast_Node_Type {
   NODE_TYPED_DECL,
   NODE_UNTYPED_DECL_SET,
   NODE_TYPED_DECL_SET,
+  NODE_FUNCTION_ARGUMENT,
   NODE_FUNCTION_DEFINITION,
   NODE_RETURN
 } Ast_Node_Type;
@@ -249,10 +250,19 @@ typedef struct Ast_Block {
   Ast_Node_Ptr_Array statements;
 } Ast_Block;
 
+typedef struct Ast_Function_Argument {
+  Ast_Node n;
+  u64 symbol;
+  Ast_Node *type;
+  Type_Info type_info;
+} Ast_Function_Argument;
+
 typedef struct Ast_Function_Definition {
   Ast_Node n;
   u64 symbol;
+  Ast_Node_Ptr_Array arguments;
   Ast_Node *return_type;
+  Type_Info return_type_info;
   Ast_Node *body;
 } Ast_Function_Definition;
 

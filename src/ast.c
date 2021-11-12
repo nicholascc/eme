@@ -180,10 +180,23 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_FUNCTION_ARGUMENT: {
+      Ast_Function_Argument *n = node;
+      print_symbol(n->symbol);
+      printf(": ");
+      print_ast_node(n->type);
+      break;
+    }
+
     case NODE_FUNCTION_DEFINITION: {
       Ast_Function_Definition *n = node;
       print_symbol(n->symbol);
-      printf(" :: () -> ");
+      printf(" :: (");
+      for(int i = 0; i < n->arguments.length; i++) {
+        if(i != 0) printf(", ");
+        print_ast_node(n->arguments.data[i]);
+      }
+      printf(") -> ");
       print_ast_node(n->return_type);
       printf(" ");
       print_ast_node(n->body);
@@ -223,7 +236,7 @@ void print_compilation_unit(Compilation_Unit *unit) {
 
   switch(unit->type) {
     case UNIT_FUNCTION_BODY: {
-      printf("Function body: ");
+      printf("Function body:\n");
       print_ast_node(unit->node);
       printf("\n");
       break;
