@@ -522,14 +522,39 @@ Ast *parse_file(Lexer *l) {
       return result;
 
     Ast_Node *node = parse_any_statement(l, &result->scope);
-    Compilation_Unit *unit = allocate_null_compilation_unit();
-    unit->type_inferred = false;
-    unit->type_inference_seen = false;
-    unit->bytecode_generated = false;
-    unit->bytecode_generation_seen = false;
-    unit->poisoned = false;
-    unit->node = node;
-    Compilation_Unit_Ptr_Array_push(&result->compilation_units, unit);
+    Compilation_Unit *declaration_unit; // to be referred to in the corresponding Scope_Entry
+    if(node->type == NODE_FUNCTION_DEFINITION) {
+      // A function is represented by a signature and body which must be
+      // type-checked separately. See more explanation in ast.h for Compilation_Unit.
+      Ast_Function_Definition *n = node;
+
+      Compilation_Unit *sig = allocate_null_compilation_unit();
+      Compilation_Unit *body = allocate_null_compilation_unit();
+
+      sig->type = UNIT_FUNCTION_SIGNATURE;
+      sig->type_inferred = false;
+      sig->type_inference_seen = false;
+      sig->bytecode_generated = false;
+      sig->bytecode_generation_seen = false;
+      sig->poisoned = false;
+      sig->node = node;
+      sig->data.body = body;
+      Compilation_Unit_Ptr_Array_push(&result->compilation_units, sig);
+
+      body->type = UNIT_FUNCTION_BODY;
+      body->type_inferred = false;
+      body->type_inference_seen = false;
+      body->bytecode_generated = false;
+      body->bytecode_generation_seen = false;
+      body->poisoned = false;
+      body->node = node;
+      body->data.signature = sig;
+      Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
+
+      declaration_unit = sig;
+    } else {
+      assert(false);
+    }
 
     if(node->type == NODE_TYPED_DECL ||
        node->type == NODE_TYPED_DECL_SET ||
@@ -542,7 +567,7 @@ Ast *parse_file(Lexer *l) {
         case NODE_UNTYPED_DECL_SET: e.symbol = ((Ast_Untyped_Decl_Set *)node)->symbol; break;
         case NODE_FUNCTION_DEFINITION: e.symbol = ((Ast_Function_Definition *)node)->symbol; break;
       }
-      e.declaration.unit = unit;
+      e.declaration.unit = declaration_unit;
       Scope_Entry_Array_push(&result->scope.entries, e);
     }
   }

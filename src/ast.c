@@ -41,7 +41,7 @@ void print_symbol(u64 symbol) {
 
 void print_ast(Ast ast) {
   for(int i = 0; i < ast.compilation_units.length; i++) {
-    print_ast_node(ast.compilation_units.data[i]->node);
+    print_compilation_unit(ast.compilation_units.data[i]);
     printf("\n\n");
   }
 }
@@ -205,6 +205,36 @@ void print_ast_node(Ast_Node *node) {
     }
 
     default: printf("CANNOT PRINT NODE TYPE:%i", node->type); break;
+  }
+}
+
+void print_compilation_unit(Compilation_Unit *unit) {
+  if(unit->poisoned) printf("POISONED:\n");
+
+  printf("type inference: ");
+  if(unit->type_inferred) printf("done\n");
+  else if(unit->type_inference_seen) printf("seen\n");
+  else printf("not yet\n");
+
+  printf("bytecode generation: ");
+  if(unit->bytecode_generated) printf("done\n");
+  else if(unit->bytecode_generation_seen) printf("seen\n");
+  else printf("not yet\n");
+
+  switch(unit->type) {
+    case UNIT_FUNCTION_BODY: {
+      printf("Function body: ");
+      print_ast_node(unit->node);
+      printf("\n");
+      break;
+    }
+    case UNIT_FUNCTION_SIGNATURE: {
+      printf("Function signature.\n");
+      break;
+    }
+    default: {
+      printf("Unknown type of compilation unit.\n");
+    }
   }
 }
 

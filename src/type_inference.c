@@ -310,7 +310,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
     case NODE_NULL: {
       return NOTHING_TYPE_INFO;
     }
-    
+
     default: {
       type_inference_error("I cannot infer the type of this expression yet.", node->loc);
       exit(1);
@@ -371,31 +371,37 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
   return using_result ? last_statement_type : NOTHING_TYPE_INFO;
 }
 
+Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, Scope *scope) {
+  return NOTHING_TYPE_INFO; // placeholder
+}
+
 void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
+  if(unit->type_inferred) return;
   if(unit->type_inference_seen) {
     type_inference_error("I found a circular dependency at this node.", unit->node->loc);
     exit(1);
   }
   unit->type_inference_seen = true;
-  Ast_Node *decl = unit->node;
-  switch(decl->type) {
-    case NODE_UNTYPED_DECL_SET:
-    case NODE_TYPED_DECL_SET:
-    case NODE_TYPED_DECL: {
-      if(infer_type_info_of_decl(decl, scope).type == TYPE_POISON) {
+  switch(unit->type) {
+    case UNIT_FUNCTION_SIGNATURE: {
+      if(infer_type_info_of_function_signature(unit->node, scope).type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;
     }
-    case NODE_FUNCTION_DEFINITION: {
-      if(infer_types_of_block(((Ast_Function_Definition*)decl)->body, false).type == TYPE_POISON) {
+    case UNIT_FUNCTION_BODY: {
+      Compilation_Unit *sig = unit->data.signature;
+      assert(sig->type == UNIT_FUNCTION_SIGNATURE);
+      infer_types_of_compilation_unit(sig, scope);
+      if(sig->poisoned) {
+        unit->poisoned = true;
+      } else if(infer_types_of_block(((Ast_Function_Definition*)unit->node)->body, false).type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;
     }
     default:
-      type_inference_error("Internal compiler error: This node referred to by a scope entry is not a declaration",
-                           decl->loc);
+      print_error_message("Internal compiler error: Unknown compilation unit type.", NULL_LOCATION);
       exit(1);
   }
   unit->type_inferred = true;

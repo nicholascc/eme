@@ -176,6 +176,7 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
 
   for(int i = 0; i < ast.compilation_units.length; i++) {
     Compilation_Unit unit = *ast.compilation_units.data[i];
+    if(unit.type != UNIT_FUNCTION_BODY) continue;
     assert(unit.bytecode_generated);
     Bytecode_Function fn = *unit.bytecode.function;
     generate_llvm_function(mod, builder, fn);

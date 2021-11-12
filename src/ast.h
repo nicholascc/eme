@@ -86,13 +86,28 @@ GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
 typedef struct Bytecode_Function Bytecode_Function;
 
+typedef enum Compilation_Unit_Type {
+  // A function is represented by a signature and body which must be
+  // type-checked separately (since for example the body of a recursive
+  // function may reference it's own signature).
+  UNIT_FUNCTION_SIGNATURE,
+  UNIT_FUNCTION_BODY
+} Compilation_Unit_Type;
+
+typedef struct Compilation_Unit Compilation_Unit;
+
 typedef struct Compilation_Unit {
+  Compilation_Unit_Type type;
   bool type_inferred;
   bool type_inference_seen;
   bool bytecode_generated;
   bool bytecode_generation_seen;
   bool poisoned;
   Ast_Node *node;
+  union {
+    Compilation_Unit *signature;
+    Compilation_Unit *body;
+  } data;
   union {
     Bytecode_Function *function;
   } bytecode;
@@ -256,5 +271,6 @@ void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node *node);
 void print_type_info(Type_Info t);
+void print_compilation_unit(Compilation_Unit *unit);
 
 #endif /* end of include guard: AST_H */

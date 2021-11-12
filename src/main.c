@@ -52,9 +52,13 @@ int main(int argc, char *argv[]) {
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
     Compilation_Unit *unit = entry.declaration.unit;
-    generate_bytecode_compilation_unit(unit, &ast->scope);
-    print_bytecode_compilation_unit(unit);
-    interpret_bytecode_function(*unit->bytecode.function);
+    if(unit->type == UNIT_FUNCTION_SIGNATURE) {
+      Compilation_Unit *body = unit->data.body;
+      infer_types_of_compilation_unit(body, &ast->scope);
+      generate_bytecode_compilation_unit(body, &ast->scope);
+      print_bytecode_compilation_unit(body);
+      interpret_bytecode_function(*body->bytecode.function);
+    }
   }
 
   if(should_exit_after_type_inference) {

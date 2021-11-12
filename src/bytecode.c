@@ -76,7 +76,7 @@ void print_bytecode_function(Bytecode_Function fn) {
 void print_bytecode_compilation_unit(Compilation_Unit *unit) {
   if(unit->bytecode_generated)
     print_bytecode_function(*unit->bytecode.function);
-  else printf("<bytecode not generated yet\n");
+  else printf("<bytecode not generated yet>\n");
 }
 
 
@@ -291,12 +291,11 @@ void generate_bytecode_compilation_unit(Compilation_Unit *unit, Scope *scope) {
   assert(!unit->bytecode_generation_seen && "circular dependency");
   assert(!unit->poisoned && "unit poisoned");
 
-  if(!unit->type_inferred) {
-    infer_types_of_compilation_unit(unit, scope);
+  infer_types_of_compilation_unit(unit, scope);
+  if(unit->type == UNIT_FUNCTION_BODY) {
+    assert(unit->node->type == NODE_FUNCTION_DEFINITION);
+    Ast_Function_Definition *fn = unit->node;
+    unit->bytecode.function = generate_bytecode_function(fn, scope);
+    unit->bytecode_generated = true;
   }
-
-  assert(unit->node->type == NODE_FUNCTION_DEFINITION);
-  Ast_Function_Definition *fn = unit->node;
-  unit->bytecode.function = generate_bytecode_function(fn, scope);
-  unit->bytecode_generated = true;
 }
