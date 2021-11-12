@@ -16,31 +16,31 @@ GENERATE_DARRAY_CODE(Bytecode_Function, Bytecode_Function_Array);
 void print_bytecode_instruction(Bytecode_Instruction inst) {
   switch(inst.type) {
     case BC_ADD: {
-      printf("ADD %i <- %i %i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      printf("add r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
     }
     case BC_LESS_THAN: {
-      printf("LESS_THAN %i <- %i %i\n", inst.data.bin_conv_op.reg_a, inst.data.bin_conv_op.reg_b, inst.data.bin_conv_op.reg_c);
+      printf("less_than r%i <- r%i r%i\n", inst.data.bin_conv_op.reg_a, inst.data.bin_conv_op.reg_b, inst.data.bin_conv_op.reg_c);
       break;
     }
     case BC_SET_LITERAL: {
-      printf("SET_LITERAL %i <- {%lli}\n", inst.data.set_literal.reg_a, inst.data.set_literal.lit_b);
+      printf("set r%i <- %lli\n", inst.data.set_literal.reg_a, inst.data.set_literal.lit_b);
       break;
     }
     case BC_SET: {
-      printf("SET %i <- %i\n", inst.data.set.reg_a, inst.data.set.reg_b);
+      printf("set r%i <- r%i\n", inst.data.set.reg_a, inst.data.set.reg_b);
       break;
     }
     case BC_RETURN: {
-      printf("RETURN %i\n", inst.data.ret.reg);
+      printf("ret r%i\n", inst.data.ret.reg);
       break;
     }
     case BC_BRANCH: {
-      printf("BRANCH %i\n", inst.data.branch.block);
+      printf("branch r%i\n", inst.data.branch.block);
       break;
     }
     case BC_COND_BRANCH: {
-      printf("COND_BRANCH %i ? [%i, %i]\n", inst.data.cond_branch.reg_cond, inst.data.cond_branch.block_true, inst.data.cond_branch.block_false);
+      printf("cond_branch r%i -> [%i, %i]\n", inst.data.cond_branch.reg_cond, inst.data.cond_branch.block_true, inst.data.cond_branch.block_false);
       break;
     }
     default: {
