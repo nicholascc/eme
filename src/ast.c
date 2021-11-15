@@ -251,7 +251,7 @@ void print_compilation_unit(Compilation_Unit *unit) {
   }
 }
 
-void print_type_info(Type_Info t) { // @Incomplete this should probably be better but strings are hard :(
+void print_type_info(Type_Info t) {
   switch(t.type) {
     case TYPE_UNKNOWN: printf("unknown"); break;
     case TYPE_NOTHING: printf("nothing"); break;
