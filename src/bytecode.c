@@ -36,7 +36,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       break;
     }
     case BC_BRANCH: {
-      printf("branch r%i\n", inst.data.branch.block);
+      printf("branch %i\n", inst.data.branch.block);
       break;
     }
     case BC_COND_BRANCH: {
