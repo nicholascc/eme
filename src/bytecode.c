@@ -87,7 +87,7 @@ void print_bytecode_compilation_unit(Compilation_Unit *unit) {
 
 
 u32 add_block_to_block(Ast_Block *block_node, Bytecode_Function *fn, u32 *block);
-u32 generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope);
+Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope);
 
 // returns the register storing the result
 u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Scope *scope) {
@@ -207,24 +207,24 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Bytecode_Block_Array_push(&fn->blocks, init_Bytecode_Block(2));
       *block = fn->blocks.length - 1;
 
-      u32 block_true = generate_bytecode_block(n->first, fn, scope);
-      cond.data.cond_branch.block_true = block_true;
+      Bytecode_Ast_Block block_true = generate_bytecode_block(n->first, fn, scope);
+      cond.data.cond_branch.block_true = block_true.entry;
       {
         Bytecode_Instruction inst;
         inst.type = BC_BRANCH;
         inst.data.branch.block = *block;
-        Bytecode_Block_push(&fn->blocks.data[block_true], inst);
+        Bytecode_Block_push(&fn->blocks.data[block_true.exit], inst);
       }
 
 
       u32 if_false_result;
-      u32 block_false = generate_bytecode_block(n->second, fn, scope);
-      cond.data.cond_branch.block_false = block_false;
+      Bytecode_Ast_Block block_false = generate_bytecode_block(n->second, fn, scope);
+      cond.data.cond_branch.block_false = block_false.entry;
       {
         Bytecode_Instruction inst;
         inst.type = BC_BRANCH;
         inst.data.branch.block = *block;
-        Bytecode_Block_push(&fn->blocks.data[cond.data.cond_branch.block_false], inst);
+        Bytecode_Block_push(&fn->blocks.data[block_false.exit], inst);
       }
 
       assert(!n->result_is_used);
@@ -258,9 +258,7 @@ u32 add_block_to_block(Ast_Block *block_node, Bytecode_Function *fn, u32 *block)
   return last_register;
 }
 
-// returns the id of the generated block, and places in the pointer the id of the
-// register storing the result of the block (the result of the last statement)
-u32 generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope) {
+Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope) {
   Bytecode_Block_Array_push(&fn->blocks, init_Bytecode_Block(2));
   u32 starting_block = fn->blocks.length - 1;
   u32 block = starting_block;
@@ -271,7 +269,7 @@ u32 generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope)
     generate_bytecode_expr(node, &block, fn, scope);
   }
 
-  return starting_block;
+  return (Bytecode_Ast_Block){starting_block, block};
 }
 
 
@@ -282,7 +280,7 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
   assert(defn->body->type == NODE_BLOCK);
   Ast_Block *body = defn->body;
   u32 entry_result_reg;
-  r->entry_block = generate_bytecode_block(defn->body, r, scope);
+  r->entry_block = generate_bytecode_block(defn->body, r, scope).entry;
   return r;
 }
 

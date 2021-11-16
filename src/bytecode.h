@@ -76,6 +76,14 @@ typedef struct Bytecode_Function {
 
 GENERATE_DARRAY_HEADER(Bytecode_Function, Bytecode_Function_Array);
 
+// Refers to the translation of an ast block to bytecode, where entry is the
+// generated entry block and exit is the generated exit block.
+// Entry can equal exit.
+typedef struct Bytecode_Ast_Block {
+  u32 entry;
+  u32 exit;
+} Bytecode_Ast_Block;
+
 void print_bytecode_instruction(Bytecode_Instruction inst);
 void print_bytecode_block(Bytecode_Block block);
 void print_bytecode_function(Bytecode_Function fn);
