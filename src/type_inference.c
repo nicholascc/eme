@@ -6,13 +6,13 @@
 #include "errors.h"
 
 
-void type_inference_error(char *message, Location l) {
+void type_inference_error(char *message, Location l, bool *unit_poisoned) {
   print_error_message(message, l);
-  should_exit_after_type_inference = true;
+  *unit_poisoned = true;
 }
 
-void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way) {
-  type_inference_error(NULL, node.loc);
+void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way, bool *unit_poisoned) {
+  type_inference_error(NULL, node.loc, unit_poisoned);
   printf("I cannot implicitly cast ");
   print_type_info(a);
   printf(" -> ");
@@ -84,7 +84,7 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
     return x;
   else {
     print_type_info(x);
-    type_inference_error("I don't know how to make this type concrete.", node.loc);
+    print_error_message("I don't know how to make this type concrete.", node.loc);
     return POISON_TYPE_INFO;
   }
 }
@@ -94,27 +94,27 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
 
 
 
-Type_Info type_info_of_type_expr(Ast_Node *type_node) {
+Type_Info type_info_of_type_expr(Ast_Node *type_node, bool *unit_poisoned) {
   if(type_node->type != NODE_PRIMITIVE_TYPE) {
-    type_inference_error("Internal compiler error: Compiler expected a primitive type.", type_node->loc);
+    type_inference_error("Internal compiler error: Compiler expected a primitive type.", type_node->loc, unit_poisoned);
     exit(1);
   }
   Ast_Primitive_Type *n = (Ast_Primitive_Type *)type_node;
   return n->type_info;
 }
 
-Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
+Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope, bool *unit_poisoned) {
   if(decl->type == NODE_TYPED_DECL) {
     Ast_Typed_Decl *n = (Ast_Typed_Decl *)decl;
-    if(n->type_info.type == TYPE_UNKNOWN) n->type_info = type_info_of_type_expr(n->type);
+    if(n->type_info.type == TYPE_UNKNOWN) n->type_info = type_info_of_type_expr(n->type, unit_poisoned);
     return n->type_info;
 
   } else if(decl->type == NODE_TYPED_DECL_SET) {
     Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)decl;
     if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true);
-    Type_Info given_type = type_info_of_type_expr(n->type);
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true, unit_poisoned);
+    Type_Info given_type = type_info_of_type_expr(n->type, unit_poisoned);
 
     if(inferred_type.type == TYPE_POISON || given_type.type == TYPE_POISON) {
       n->type_info = POISON_TYPE_INFO;
@@ -123,34 +123,37 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope) {
       n->type_info = given_type;
       return given_type;
     } else {
-      error_cannot_implicitly_cast(inferred_type, given_type, n->n, false);
+      error_cannot_implicitly_cast(inferred_type, given_type, n->n, false, unit_poisoned);
       n->type_info = POISON_TYPE_INFO;
       return POISON_TYPE_INFO;
     }
     n->type_info = solidify_type(inferred_type, n->n);
-    return inferred_type;
+    if(n->type_info.type == TYPE_POISON) *unit_poisoned = true;
+    return n->type_info;
 
   } else if(decl->type == NODE_UNTYPED_DECL_SET) {
     Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)decl;
     if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true);
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true, unit_poisoned);
     n->type_info = solidify_type(inferred_type, n->n);
-    return inferred_type;
+    if(n->type_info.type == TYPE_POISON) *unit_poisoned = true;
+    return n->type_info;
 
   } else {
-    type_inference_error("Internal compiler error: This is not a declaration.", decl->loc);
+    type_inference_error("Internal compiler error: This is not a declaration.", decl->loc, unit_poisoned);
     exit(1);
   }
 }
 
 Type_Info infer_type_info_of_decl_unit(Compilation_Unit *unit, Scope *scope) {
   if(unit->type_inference_seen && !unit->type_inferred) {
-    type_inference_error("I found a circular dependency at this node.", unit->node->loc);
-    exit(1);
+    print_error_message("I found a circular dependency at this node.", unit->node->loc);
+    unit->poisoned = true;
+    return POISON_TYPE_INFO;
   }
   unit->type_inference_seen = true;
-  Type_Info r = infer_type_info_of_decl(unit->node, scope);
+  Type_Info r = infer_type_info_of_decl(unit->node, scope, &unit->poisoned);
   unit->type_inferred = true;
   return r;
 }
@@ -169,11 +172,11 @@ Scope_Entry *get_entry_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node
     else
       break;
   }
-  type_inference_error("This variable is undefined in this scope.", node->loc);
+  print_error_message("This variable is undefined in this scope.", node->loc);
   exit(1);
 }
 
-Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
+Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node, bool *unit_poisoned) {
   Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, node);
 
   if(!scope->is_ordered)
@@ -193,12 +196,12 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
       assert(n->type_info.type != TYPE_UNKNOWN);
       return n->type_info;
     }
-    type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration.", node->loc);
+    type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration.", node->loc, unit_poisoned);
     exit(1);
   }
 }
 
-Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
+Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bool *unit_poisoned) {
   switch(node->type) {
     case NODE_LITERAL:
       return ((Ast_Literal*)node)->type;
@@ -209,13 +212,13 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
         case OPMINUS:
         case OPMUL:
         case OPDIV: {
-          Type_Info first = infer_type_of_expr(n->first, scope, true);
-          Type_Info second = infer_type_of_expr(n->second, scope, true);
+          Type_Info first = infer_type_of_expr(n->first, scope, true, unit_poisoned);
+          Type_Info second = infer_type_of_expr(n->second, scope, true, unit_poisoned);
           if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
 
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
-            type_inference_error("The operands to an arithmetic operator must be integers.", node->loc);
+            type_inference_error("The operands to an arithmetic operator must be integers.", node->loc, unit_poisoned);
 
           if(first.type == TYPE_UNKNOWN_INT && second.type == TYPE_UNKNOWN_INT) {
             first.data.unknown_int += second.data.unknown_int;
@@ -230,7 +233,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
             n->convert_to = solidify_type(first, *node);
             return first;
           }
-          error_cannot_implicitly_cast(second, first, *node, true);
+          error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
           n->convert_to = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
@@ -239,18 +242,18 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
         case OPLESS_THAN_OR_EQUAL_TO:
         case OPGREATER_THAN:
         case OPGREATER_THAN_OR_EQUAL_TO: {
-          Type_Info first = infer_type_of_expr(n->first, scope, true);
-          Type_Info second = infer_type_of_expr(n->second, scope, true);
+          Type_Info first = infer_type_of_expr(n->first, scope, true, unit_poisoned);
+          Type_Info second = infer_type_of_expr(n->second, scope, true, unit_poisoned);
           if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
-            type_inference_error("The operands to a comparison operator must be integers.", node->loc);
+            type_inference_error("The operands to a comparison operator must be integers.", node->loc, unit_poisoned);
           if(can_implicitly_cast(first, second))
             n->convert_to = solidify_type(second, *node);
           else if(can_implicitly_cast(second, first))
             n->convert_to = solidify_type(first, *node);
           else {
-            error_cannot_implicitly_cast(second, first, *node, true);
+            error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
             n->convert_to = POISON_TYPE_INFO;
             return POISON_TYPE_INFO;
           }
@@ -259,49 +262,50 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
 
         case OPSET_EQUALS: {
           if(!scope->is_ordered) {
-            type_inference_error("You cannot use a set statement outside of a block.", node->loc);
+            type_inference_error("You cannot use a set statement outside of a block.", node->loc, unit_poisoned);
           }
-          Type_Info left = infer_type_of_expr(n->first, scope, true);
-          Type_Info right = infer_type_of_expr(n->second, scope, true);
+          Type_Info left = infer_type_of_expr(n->first, scope, true, unit_poisoned);
+          Type_Info right = infer_type_of_expr(n->second, scope, true, unit_poisoned);
           if(left.type == TYPE_POISON || right.type == TYPE_POISON) {
             n->convert_to = POISON_TYPE_INFO;
             return POISON_TYPE_INFO;
           }
           if(can_implicitly_cast(right, left)) {
             n->convert_to = solidify_type(left, *node);
+            if(n->convert_to.type == TYPE_POISON) *unit_poisoned = true;
             return left;
           }
-          error_cannot_implicitly_cast(right, left, *node, false);
+          error_cannot_implicitly_cast(right, left, *node, false, unit_poisoned);
           n->convert_to = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
 
         default:
-          type_inference_error("I cannot infer the type of this expression yet.", node->loc);
+          type_inference_error("I cannot infer the type of this expression yet.", node->loc, unit_poisoned);
           exit(1);
       }
       break;
     }
     case NODE_SYMBOL: {
-      return get_type_of_identifier_in_scope(((Ast_Symbol*)node)->symbol, scope, node);
+      return get_type_of_identifier_in_scope(((Ast_Symbol*)node)->symbol, scope, node, unit_poisoned);
     }
     case NODE_BLOCK: {
-      return infer_types_of_block(node, using_result);
+      return infer_types_of_block(node, using_result, unit_poisoned);
     }
     case NODE_IF: {
       Ast_If *n = node;
       n->result_is_used = using_result;
-      Type_Info cond = infer_type_of_expr(n->cond, scope, true);
-      if(cond.type != TYPE_BOOL) print_error_message("The conditional of an if statement must be a boolean value.", n->cond->loc);
-      Type_Info first = infer_type_of_expr(n->first, scope, using_result);
-      Type_Info second = infer_type_of_expr(n->second, scope, using_result);
+      Type_Info cond = infer_type_of_expr(n->cond, scope, true, unit_poisoned);
+      if(cond.type != TYPE_BOOL) type_inference_error("The conditional of an if statement must be a boolean value.", n->cond->loc, unit_poisoned);
+      Type_Info first = infer_type_of_expr(n->first, scope, using_result, unit_poisoned);
+      Type_Info second = infer_type_of_expr(n->second, scope, using_result, unit_poisoned);
       if(using_result) {
         if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
         if(can_implicitly_cast(first, second))
           return second;
         if(can_implicitly_cast(second, first))
           return first;
-        error_cannot_implicitly_cast(second, first, *node, true);
+        error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
         return POISON_TYPE_INFO;
       }
       return NOTHING_TYPE_INFO;
@@ -312,13 +316,13 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result) {
     }
 
     default: {
-      type_inference_error("I cannot infer the type of this expression yet.", node->loc);
-      exit(1);
+      type_inference_error("I cannot infer the type of this expression yet.", node->loc, unit_poisoned);
+      return POISON_TYPE_INFO;
     }
   }
 }
 
-Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
+Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *unit_poisoned) {
   assert(node_block->type == NODE_BLOCK);
   Type_Info last_statement_type = NOTHING_TYPE_INFO;
   Ast_Block *block = (Ast_Block *) node_block;
@@ -333,20 +337,20 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
       case NODE_FUNCTION_CALL:
       case NODE_SYMBOL:
       case NODE_BLOCK: {
-        last_statement_type = infer_type_of_expr(node, &block->scope, is_last_statement);
+        last_statement_type = infer_type_of_expr(node, &block->scope, is_last_statement, unit_poisoned);
         break;
       }
 
       case NODE_TYPED_DECL:
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {
-        last_statement_type = infer_type_info_of_decl(node, &block->scope);
+        last_statement_type = infer_type_info_of_decl(node, &block->scope, unit_poisoned);
         break;
       }
 
       case NODE_RETURN: {
         Ast_Return *n = node;
-        infer_type_of_expr(n->value, &block->scope, true);
+        infer_type_of_expr(n->value, &block->scope, true, unit_poisoned);
         break;
       }
 
@@ -356,14 +360,14 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
 
       case NODE_FUNCTION_DEFINITION: {
         type_inference_error("Function definitions are not allowed in a function definition.",
-                             node->loc);
+                             node->loc, unit_poisoned);
         exit(1);
       }
 
       case NODE_PRIMITIVE_TYPE:
       default: {
         type_inference_error("Internal compiler error: I cannot infer the type of this node.",
-                             node->loc);
+                             node->loc, unit_poisoned);
         exit(1);
       }
     }
@@ -371,20 +375,21 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result) {
   return using_result ? last_statement_type : NOTHING_TYPE_INFO;
 }
 
-Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, Scope *scope) {
+Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, Scope *scope, bool *unit_poisoned) {
   return NOTHING_TYPE_INFO; // placeholder
 }
 
 void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
-  if(unit->type_inferred) return;
+  if(unit->type_inferred || unit->poisoned) return;
   if(unit->type_inference_seen) {
-    type_inference_error("I found a circular dependency at this node.", unit->node->loc);
-    exit(1);
+    print_error_message("I found a circular dependency at this node.", unit->node->loc);
+    unit->poisoned = true;
+    return;
   }
   unit->type_inference_seen = true;
   switch(unit->type) {
     case UNIT_FUNCTION_SIGNATURE: {
-      if(infer_type_info_of_function_signature(unit->node, scope).type == TYPE_POISON) {
+      if(infer_type_info_of_function_signature(unit->node, scope, &unit->poisoned).type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;
@@ -395,7 +400,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
       infer_types_of_compilation_unit(sig, scope);
       if(sig->poisoned) {
         unit->poisoned = true;
-      } else if(infer_types_of_block(((Ast_Function_Definition*)unit->node)->body, false).type == TYPE_POISON) {
+      } else if(infer_types_of_block(((Ast_Function_Definition*)unit->node)->body, false, &unit->poisoned).type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;

@@ -287,9 +287,8 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
 }
 
 void generate_bytecode_compilation_unit(Compilation_Unit *unit, Scope *scope) {
-  if(unit->bytecode_generated) return;
+  if(unit->bytecode_generated || unit->poisoned) return;
   assert(!unit->bytecode_generation_seen && "circular dependency");
-  assert(!unit->poisoned && "unit poisoned");
 
   infer_types_of_compilation_unit(unit, scope);
   if(unit->type == UNIT_FUNCTION_BODY) {

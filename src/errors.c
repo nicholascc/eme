@@ -8,7 +8,6 @@
 Location NULL_LOCATION = {-1,-1,-1};
 
 bool should_exit_after_parsing = false;
-bool should_exit_after_type_inference = false;
 
 void print_and_exit(char *s) {
   printf("%s", s);

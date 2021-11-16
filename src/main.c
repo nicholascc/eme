@@ -47,7 +47,8 @@ int main(int argc, char *argv[]) {
 
   printf("Parsed result:\n\n");
   print_ast(*ast);
-  printf("\n\n");
+
+  bool compilation_has_errors = false;
 
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
@@ -56,13 +57,17 @@ int main(int argc, char *argv[]) {
       Compilation_Unit *body = unit->data.body;
       infer_types_of_compilation_unit(body, &ast->scope);
       generate_bytecode_compilation_unit(body, &ast->scope);
-      print_bytecode_compilation_unit(body);
-      interpret_bytecode_function(*body->bytecode.function);
+      if(body->poisoned) {
+        compilation_has_errors = true;
+      } else {
+        print_bytecode_compilation_unit(body);
+        interpret_bytecode_function(*body->bytecode.function);
+      }
     }
   }
 
-  if(should_exit_after_type_inference) {
-    printf("An error occurred during type inference, exiting.\n");
+  if(compilation_has_errors) {
+    printf("\n\nThere were errors during compilation, exiting.\n");
     exit(1);
   }
 

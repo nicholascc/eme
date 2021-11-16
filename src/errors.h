@@ -12,7 +12,6 @@ typedef struct Location {
 Location NULL_LOCATION;
 
 bool should_exit_after_parsing; // indicates whether an error has occurred during parsing which would cause the later stages of compilation to fail.
-bool should_exit_after_type_inference; // same as above but for type inference phase
 
 // Given an error location, prints out the error with a nice display of the line in which it occurred.
 // Then the function caller must print the actual error message after the prelude given here.
