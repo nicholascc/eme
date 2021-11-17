@@ -195,8 +195,12 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
       Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
       assert(n->type_info.type != TYPE_UNKNOWN);
       return n->type_info;
+    } else if(node->type == NODE_FUNCTION_ARGUMENT) {
+      Ast_Function_Argument *n = (Ast_Function_Argument *)node;
+      assert(n->type_info.type != TYPE_UNKNOWN);
+      return n->type_info;
     }
-    type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration.", node->loc, unit_poisoned);
+    type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration or argument.", node->loc, unit_poisoned);
     exit(1);
   }
 }
@@ -376,6 +380,13 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *un
 }
 
 Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, Scope *scope, bool *unit_poisoned) {
+  node->return_type_info = type_info_of_type_expr(node->return_type, scope);
+  for(int i = 0; i < node->arguments.length; i++) {
+    Ast_Function_Argument *arg = node->arguments.data[i];
+    assert(arg->n.type == NODE_FUNCTION_ARGUMENT);
+    arg->type_info = type_info_of_type_expr(node->return_type, scope);
+  }
+
   return NOTHING_TYPE_INFO; // placeholder
 }
 

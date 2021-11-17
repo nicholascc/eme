@@ -263,6 +263,7 @@ typedef struct Ast_Function_Definition {
   Ast_Node_Ptr_Array arguments;
   Ast_Node *return_type;
   Type_Info return_type_info;
+  Scope scope; // the scope entries for this function's arguments must be placed first and in order in this scope.
   Ast_Node *body;
 } Ast_Function_Definition;
 

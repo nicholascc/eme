@@ -276,6 +276,19 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Scope *scope) {
   Bytecode_Function *r = malloc(sizeof(Bytecode_Function));
   r->register_types = init_Type_Info_Array(4);
+
+  r->arg_count = 0;
+  for(int i = 0; i < defn->scope.entries.length; i++) {
+    Scope_Entry *e = &defn->scope.entries.data[i];
+    if(e->declaration.node->type == NODE_FUNCTION_ARGUMENT) {
+      Ast_Function_Argument *arg = e->declaration.node;
+      e->register_id = r->register_types.length;
+      Type_Info_Array_push(&r->register_types, arg->type_info);
+      r->arg_count++;
+    }
+  }
+  assert(r->arg_count == defn->arguments.length);
+
   r->blocks = init_Bytecode_Block_Array(2);
   assert(defn->body->type == NODE_BLOCK);
   Ast_Block *body = defn->body;

@@ -617,6 +617,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
 }
 
 Ast_Node *parse_definition(Lexer *l, Scope *scope) {
+  printf("X\n");
   Token identifier = peek_token(l);
   Token double_colon = peek_token(l);
   assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");
@@ -627,39 +628,50 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   Token open_paren = peek_token(l);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 
+  Ast_Function_Definition *n = allocate_ast_node(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
+  n->n.loc = double_colon.loc;
+  n->scope.is_ordered = true;
+  n->scope.has_parent = true;
+  n->scope.parent = scope;
+  n->scope.entries = init_Scope_Entry_Array(2);
+
   Ast_Node_Ptr_Array arguments = init_Ast_Node_Ptr_Array(2);
+  
   while(1) {
     Token sym = peek_token(l);
     if(sym.type != TSYMBOL) error_unexpected_token(sym);
     Token colon = peek_token(l);
     if(colon.type != TCOLON) error_unexpected_token(colon);
 
-    Ast_Node *type = parse_type(l, scope);
+    Ast_Node *type = parse_type(l, scope); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
     Ast_Function_Argument *arg = allocate_ast_node(NODE_FUNCTION_ARGUMENT, sizeof(Ast_Function_Argument));
     arg->n.loc = colon.loc;
     arg->symbol = sym.data.symbol;
     arg->type = type;
     arg->type_info = UNKNOWN_TYPE_INFO;
     Ast_Node_Ptr_Array_push(&arguments, arg);
-    
+
+    Scope_Entry e;
+    e.symbol = sym.data.symbol;
+    e.declaration.node = arg;
+    Scope_Entry_Array_push(&n->scope.entries, e);
+
     Token next = peek_token(l);
     if(next.type == TCLOSE_PAREN) break;
     else if(next.type != TCOMMA) error_unexpected_token(next);
   }
-
   Token arrow = peek_token(l);
   if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
 
-  Ast_Node *return_type = parse_type(l, scope);
-  Ast_Node *body = parse_block(l, scope);
+  Ast_Node *return_type = parse_type(l, scope); // we are using the parent scope here because this should be not be able to use the arguments (at least for now...)
+  Ast_Node *body = parse_block(l, &n->scope);
 
-  Ast_Function_Definition *n = allocate_ast_node(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
-  n->n.loc = double_colon.loc;
 
   n->symbol = identifier.data.symbol;
   n->arguments = arguments;
   n->return_type = return_type;
   n->return_type_info = UNKNOWN_TYPE_INFO;
   n->body = body;
+
   return n;
 }

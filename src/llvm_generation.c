@@ -43,7 +43,12 @@ LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type_Inf
 void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_Function fn) {
   char *error = NULL;
 
-  LLVMValueRef llf = LLVMAddFunction(mod, "eme", LLVMFunctionType(LLVMInt64Type(), NULL, 0, 0));
+  LLVMValueRef *arg_types = malloc(fn.arg_count * sizeof(LLVMTypeRef));
+  for(int i = 0; i < fn.arg_count; i++) {
+    arg_types[i] = llvm_type_of(fn.register_types.data[i]);
+  }
+
+  LLVMValueRef llf = LLVMAddFunction(mod, "eme", LLVMFunctionType(LLVMInt64Type(), arg_types, fn.arg_count, false));
   LLVMSetFunctionCallConv(llf, LLVMCCallConv);
 
   LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(llf, "");
@@ -56,7 +61,13 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
   LLVMValueRef *r = malloc(fn.register_types.length * sizeof(LLVMValueRef));
   {
     LLVMPositionBuilderAtEnd(builder, entry_block);
-    for(int i = 0; i < fn.register_types.length; i++) {
+    for(int i = 0; i < fn.arg_count; i++) {
+      LLVMTypeRef type = arg_types[i];
+      LLVMValueRef arg = LLVMGetParam(llf, i);
+      r[i] = LLVMBuildAlloca(builder, type, "");
+      LLVMBuildStore(builder, arg, r[i]);
+    }
+    for(int i = fn.arg_count; i < fn.register_types.length; i++) {
       LLVMTypeRef type = llvm_type_of(fn.register_types.data[i]);
       r[i] = LLVMBuildAlloca(builder, type, "");
     }
