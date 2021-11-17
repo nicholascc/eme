@@ -128,6 +128,7 @@ void print_ast_node(Ast_Node *node) {
       Ast_If *n = node;
       printf("( if ");
       print_ast_node(n->cond);
+      printf(" ");
       print_ast_node(n->first);
       printf(" else ");
       print_ast_node(n->second);

@@ -9,7 +9,7 @@ void interpret_bytecode_function(Bytecode_Function fn) {
   Bytecode_Block block = fn.blocks.data[fn.entry_block];
   int inst_i = 0;
   while(true) {
-    Bytecode_Instruction inst = block.data[inst_i];
+    Bytecode_Instruction inst = block.instructions.data[inst_i];
     switch(inst.type) {
       case BC_ADD:
       case BC_SUB: {
@@ -90,7 +90,7 @@ void interpret_bytecode_function(Bytecode_Function fn) {
     }
 
     inst_i++;
-    if(inst_i >= block.length) {
+    if(inst_i >= block.instructions.length) {
       break;
     }
   }

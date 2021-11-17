@@ -247,15 +247,26 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
     lhs_needs_semicolon = true;
 
   } else if(lhs.type == TIF) {
+    {
+      Token t = peek_token(l);
+      if(t.type != TOPEN_PAREN) {
+        print_error_message("The conditional for an if statement must be parenthesized.", t.loc);
+        exit(1);
+      }
+    }
     Ast_Node *cond = parse_expression(l, scope, 0, NULL);
-    Ast_Node *if_true = parse_expression(l, scope, 0, NULL);
+    {
+      Token t = peek_token(l);
+      if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
+    }
+    Ast_Node *if_true = parse_any_statement(l, scope);
 
     save_state(l);
     Token t = peek_token(l);
     Ast_Node *if_false;
 
     if(t.type == TELSE) {
-      if_false = parse_expression(l, scope, 0, NULL);
+      if_false = parse_any_statement(l, scope);
       lhs_ast = if_to_ast(cond, lhs.loc, if_true, if_false);
     } else {
       revert_state(l);
@@ -636,7 +647,7 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   n->scope.entries = init_Scope_Entry_Array(2);
 
   Ast_Node_Ptr_Array arguments = init_Ast_Node_Ptr_Array(2);
-  
+
   while(1) {
     Token sym = peek_token(l);
     if(sym.type != TSYMBOL) error_unexpected_token(sym);

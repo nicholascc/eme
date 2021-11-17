@@ -79,8 +79,8 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
     LLVMBasicBlockRef llb = llblocks[i];
     LLVMPositionBuilderAtEnd(builder, llb);
 
-    for(int j = 0; j < block.length; j++) {
-      Bytecode_Instruction inst = block.data[j];
+    for(int j = 0; j < block.instructions.length; j++) {
+      Bytecode_Instruction inst = block.instructions.data[j];
       switch(inst.type) {
         case BC_ADD:
         case BC_SUB: {

@@ -296,6 +296,10 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
     case NODE_BLOCK: {
       return infer_types_of_block(node, using_result, unit_poisoned);
     }
+    case NODE_RETURN: {
+      Ast_Return *n = node;
+      return infer_type_of_expr(n->value, scope, using_result, unit_poisoned);
+    }
     case NODE_IF: {
       Ast_If *n = node;
       n->result_is_used = using_result;
@@ -332,7 +336,7 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *un
   Ast_Block *block = (Ast_Block *) node_block;
   for(int i = 0; i < block->statements.length; i++) {
     Ast_Node *node = block->statements.data[i];
-    bool is_last_statement = i == block->statements.length-1;
+    bool using_this_result = using_result && (i == block->statements.length-1);
     switch(node->type) {
       case NODE_LITERAL:
       case NODE_BINARY_OP:
@@ -341,7 +345,7 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *un
       case NODE_FUNCTION_CALL:
       case NODE_SYMBOL:
       case NODE_BLOCK: {
-        last_statement_type = infer_type_of_expr(node, &block->scope, is_last_statement, unit_poisoned);
+        last_statement_type = infer_type_of_expr(node, &block->scope, using_this_result, unit_poisoned);
         break;
       }
 
@@ -354,7 +358,7 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *un
 
       case NODE_RETURN: {
         Ast_Return *n = node;
-        infer_type_of_expr(n->value, &block->scope, true, unit_poisoned);
+        last_statement_type = infer_type_of_expr(n->value, &block->scope, true, unit_poisoned);
         break;
       }
 

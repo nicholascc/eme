@@ -62,7 +62,15 @@ typedef struct Bytecode_Instruction {
   } data;
 } Bytecode_Instruction;
 
-GENERATE_DARRAY_HEADER(Bytecode_Instruction, Bytecode_Block);
+GENERATE_DARRAY_HEADER(Bytecode_Instruction, Bytecode_Instruction_Array);
+
+typedef struct Bytecode_Block {
+  bool is_concluded; // specifies whether the block is finished, i.e. it ends with a branch
+  Bytecode_Instruction_Array instructions;
+} Bytecode_Block;
+
+void add_instruction_to_block(Bytecode_Block *block, Bytecode_Instruction inst);
+Bytecode_Block init_bytecode_block();
 
 GENERATE_DARRAY_HEADER(Bytecode_Block, Bytecode_Block_Array);
 
@@ -73,6 +81,7 @@ typedef struct Bytecode_Function {
   u32 arg_count;
   Type_Info_Array register_types;
   Bytecode_Block_Array blocks;
+  Type_Info return_type;
   u32 entry_block;
 } Bytecode_Function;
 
