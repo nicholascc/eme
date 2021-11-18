@@ -142,6 +142,7 @@ Ast_If *if_to_ast(Ast_Node *cond, Location loc, Ast_Node *first, Ast_Node *secon
   Ast_If *n = allocate_ast_node(NODE_IF, sizeof(Ast_If));
   n->n.loc = loc;
   n->result_is_used = false;
+  n->result_type_info = NOTHING_TYPE_INFO;
   n->cond = cond;
   n->first = first;
   n->second = second;
@@ -259,14 +260,16 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
       Token t = peek_token(l);
       if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
     }
-    Ast_Node *if_true = parse_any_statement(l, scope);
+    printf("X\n");
+    Ast_Node *if_true = parse_any_statement(l, scope, false);
+    printf("Y\n");
 
     save_state(l);
     Token t = peek_token(l);
     Ast_Node *if_false;
 
     if(t.type == TELSE) {
-      if_false = parse_any_statement(l, scope);
+      if_false = parse_any_statement(l, scope, false);
       lhs_ast = if_to_ast(cond, lhs.loc, if_true, if_false);
     } else {
       revert_state(l);
@@ -440,7 +443,7 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
 }
 
 // parses definitions, expressions, statements, declarations, blocks, etc.
-Ast_Node *parse_any_statement(Lexer *l, Scope *scope) {
+Ast_Node *parse_any_statement(Lexer *l, Scope *scope, bool require_semicolon_for_expressions) {
   save_state(l);
   Token first = peek_token(l);
 
@@ -469,7 +472,7 @@ Ast_Node *parse_any_statement(Lexer *l, Scope *scope) {
   revert_state(l);
   bool needs_semicolon;
   Ast_Node *n = parse_expression(l, scope, 0, &needs_semicolon);
-  if(needs_semicolon) expect_and_eat_semicolon(l);
+  if(needs_semicolon && require_semicolon_for_expressions) expect_and_eat_semicolon(l);
   return n;
 }
 
@@ -532,7 +535,7 @@ Ast *parse_file(Lexer *l) {
     if(next.type == TEOL)
       return result;
 
-    Ast_Node *node = parse_any_statement(l, &result->scope);
+    Ast_Node *node = parse_any_statement(l, &result->scope, true);
     Compilation_Unit *declaration_unit; // to be referred to in the corresponding Scope_Entry
     if(node->type == NODE_FUNCTION_DEFINITION) {
       // A function is represented by a signature and body which must be
@@ -607,7 +610,7 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
       parse_error("'{' has no matching '}'", first.loc, true);
     revert_state(l);
 
-    Ast_Node *node = parse_any_statement(l, scope);
+    Ast_Node *node = parse_any_statement(l, scope, true);
     Ast_Node_Ptr_Array_push(statements, node);
 
     if(node->type == NODE_TYPED_DECL ||

@@ -201,6 +201,7 @@ typedef struct Ast_Unary_Op {
 typedef struct Ast_If {
   Ast_Node n;
   bool result_is_used;
+  Type_Info result_type_info; // only set if result_is_used is true
   Ast_Node *cond;
   Ast_Node *first;
   Ast_Node *second;

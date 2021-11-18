@@ -79,7 +79,12 @@ void print_bytecode_compilation_unit(Compilation_Unit *unit) {
   else printf("<bytecode not generated yet>\n");
 }
 
-void add_instruction_to_block(Bytecode_Block *block, Bytecode_Instruction inst) {
+u32 add_register(Bytecode_Function *fn, Type_Info type) {
+  Type_Info_Array_push(&fn->register_types, type);
+  return fn->register_types.length-1;
+}
+
+void add_instruction(Bytecode_Block *block, Bytecode_Instruction inst) {
   assert(!block->is_concluded);
   if(inst.type == BC_RETURN || inst.type == BC_BRANCH || inst.type == BC_COND_BRANCH)
     block->is_concluded = true;
@@ -107,9 +112,8 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Bytecode_Instruction inst;
       inst.type = BC_SET_LITERAL;
       inst.data.set_literal.lit_b = n->value;
-      inst.data.set_literal.reg_a = fn->register_types.length;
-      Type_Info_Array_push(&fn->register_types, solidify_type(n->type, *node));
-      add_instruction_to_block(&fn->blocks.data[*block], inst);
+      inst.data.set_literal.reg_a = add_register(fn, solidify_type(n->type, *node));
+      add_instruction(&fn->blocks.data[*block], inst);
       return inst.data.set_literal.reg_a;
     }
     case NODE_BINARY_OP: {
@@ -120,9 +124,8 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           inst.type = BC_ADD;
           inst.data.bin_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
           inst.data.bin_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
-          inst.data.bin_op.reg_a = fn->register_types.length;
-          Type_Info_Array_push(&fn->register_types, n->convert_to);
-          add_instruction_to_block(&fn->blocks.data[*block], inst);
+          inst.data.bin_op.reg_a = add_register(fn, n->convert_to);
+          add_instruction(&fn->blocks.data[*block], inst);
           return inst.data.bin_op.reg_a;
         }
         case OPLESS_THAN: {
@@ -130,11 +133,10 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           inst.type = BC_LESS_THAN;
           inst.data.bin_conv_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
           inst.data.bin_conv_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
-          inst.data.bin_conv_op.reg_a = fn->register_types.length;
+          inst.data.bin_conv_op.reg_a = add_register(fn, BOOL_TYPE_INFO);
           assert(n->convert_to.type == TYPE_INT);
           inst.data.bin_conv_op.conv_type = n->convert_to;
-          Type_Info_Array_push(&fn->register_types, BOOL_TYPE_INFO);
-          add_instruction_to_block(&fn->blocks.data[*block], inst);
+          add_instruction(&fn->blocks.data[*block], inst);
           return inst.data.bin_conv_op.reg_a;
         } // should combine these two cases above into single simplified code
         case OPSET_EQUALS: {
@@ -150,7 +152,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           inst.type = BC_SET;
           inst.data.set.reg_a = reg;
           inst.data.set.reg_b = generate_bytecode_expr(n->second, block, fn, scope);
-          add_instruction_to_block(&fn->blocks.data[*block], inst);
+          add_instruction(&fn->blocks.data[*block], inst);
           return reg;
         }
         default: {
@@ -170,34 +172,31 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_TYPED_DECL: {
       Ast_Typed_Decl *n = node;
       Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node);
-      e->register_id = fn->register_types.length;
-      Type_Info_Array_push(&fn->register_types, n->type_info);
+      e->register_id = add_register(fn, n->type_info);
       return -1;
     }
     case NODE_UNTYPED_DECL_SET: {
       Ast_Untyped_Decl_Set *n = node;
       Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node);
-      u32 reg = fn->register_types.length;
+      u32 reg = add_register(fn, n->type_info);
       e->register_id = reg;
-      Type_Info_Array_push(&fn->register_types, n->type_info);
       Bytecode_Instruction inst;
       inst.type = BC_SET;
       inst.data.set.reg_a = reg;
       inst.data.set.reg_b = generate_bytecode_expr(n->value, block, fn, scope);
-      add_instruction_to_block(&fn->blocks.data[*block], inst);
+      add_instruction(&fn->blocks.data[*block], inst);
       return reg;
     }
     case NODE_TYPED_DECL_SET: {
       Ast_Typed_Decl_Set *n = node;
       Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node);
       u32 reg = fn->register_types.length;
-      e->register_id = reg;
-      Type_Info_Array_push(&fn->register_types, n->type_info);
+      e->register_id = add_register(fn, n->type_info);
       Bytecode_Instruction inst;
       inst.type = BC_SET;
       inst.data.set.reg_a = reg;
       inst.data.set.reg_b = generate_bytecode_expr(n->value, block, fn, scope);
-      add_instruction_to_block(&fn->blocks.data[*block], inst);
+      add_instruction(&fn->blocks.data[*block], inst);
       return reg;
     }
     case NODE_RETURN: {
@@ -205,7 +204,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Bytecode_Instruction inst;
       inst.type = BC_RETURN;
       inst.data.ret.reg = generate_bytecode_expr(n->value, block, fn, scope);
-      add_instruction_to_block(&fn->blocks.data[*block], inst);
+      add_instruction(&fn->blocks.data[*block], inst);
       return -1;
     }
     case NODE_IF: {
@@ -217,13 +216,25 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
       *block = fn->blocks.length - 1;
 
+      u32 if_result_reg;
+      if(n->result_is_used) {
+        if_result_reg = add_register(fn, n->result_type_info);
+      }
+
       Bytecode_Ast_Block block_true = generate_bytecode_block(n->first, fn, scope);
       cond.data.cond_branch.block_true = block_true.entry;
       if(!fn->blocks.data[block_true.exit].is_concluded) {
+        if(n->result_is_used) {
+          Bytecode_Instruction inst;
+          inst.type = BC_SET;
+          inst.data.set.reg_a = if_result_reg;
+          inst.data.set.reg_b = block_true.result_reg;
+          add_instruction(&fn->blocks.data[block_true.exit], inst);
+        }
         Bytecode_Instruction inst;
         inst.type = BC_BRANCH;
         inst.data.branch.block = *block;
-        add_instruction_to_block(&fn->blocks.data[block_true.exit], inst);
+        add_instruction(&fn->blocks.data[block_true.exit], inst);
       }
 
 
@@ -231,16 +242,21 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Bytecode_Ast_Block block_false = generate_bytecode_block(n->second, fn, scope);
       cond.data.cond_branch.block_false = block_false.entry;
       if(!fn->blocks.data[block_false.exit].is_concluded) {
+        if(n->result_is_used) {
+          Bytecode_Instruction inst;
+          inst.type = BC_SET;
+          inst.data.set.reg_a = if_result_reg;
+          inst.data.set.reg_b = block_false.result_reg;
+          add_instruction(&fn->blocks.data[block_false.exit], inst);
+        }
         Bytecode_Instruction inst;
         inst.type = BC_BRANCH;
         inst.data.branch.block = *block;
-        add_instruction_to_block(&fn->blocks.data[block_false.exit], inst);
+        add_instruction(&fn->blocks.data[block_false.exit], inst);
       }
 
-      assert(!n->result_is_used);
-
-      add_instruction_to_block(&fn->blocks.data[prev_block], cond);
-      return -1;
+      add_instruction(&fn->blocks.data[prev_block], cond);
+      return n->result_is_used ? if_result_reg : -1;
     }
     case NODE_NULL: {
       return -1;
@@ -273,14 +289,15 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
   Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block());
   u32 starting_block = fn->blocks.length - 1;
   u32 block = starting_block;
+  u32 result_reg;
 
   if(node->type == NODE_BLOCK) {
-    add_block_to_block(node, fn, &block);
+    result_reg = add_block_to_block(node, fn, &block);
   } else {
-    generate_bytecode_expr(node, &block, fn, scope);
+    result_reg = generate_bytecode_expr(node, &block, fn, scope);
   }
 
-  return (Bytecode_Ast_Block){starting_block, block};
+  return (Bytecode_Ast_Block){starting_block, block, result_reg};
 }
 
 
@@ -293,8 +310,7 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
     Scope_Entry *e = &defn->scope.entries.data[i];
     if(e->declaration.node->type == NODE_FUNCTION_ARGUMENT) {
       Ast_Function_Argument *arg = e->declaration.node;
-      e->register_id = r->register_types.length;
-      Type_Info_Array_push(&r->register_types, arg->type_info);
+      e->register_id = add_register(r, arg->type_info);
       r->arg_count++;
     }
   }
@@ -317,16 +333,15 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
   if(!r->blocks.data[generated.exit].is_concluded) {
     Bytecode_Instruction set_literal;
     set_literal.type = BC_SET_LITERAL;
-    u32 reg = r->register_types.length;
-    set_literal.data.set_literal.reg_a = r->register_types.length;
+    u32 reg = add_register(r, r->return_type);
+    set_literal.data.set_literal.reg_a = reg;
     set_literal.data.set_literal.lit_b = 0;
-    Type_Info_Array_push(&r->register_types, r->return_type);
-    add_instruction_to_block(&r->blocks.data[generated.exit], set_literal);
+    add_instruction(&r->blocks.data[generated.exit], set_literal);
 
     Bytecode_Instruction ret;
     ret.type = BC_RETURN;
     ret.data.ret.reg = reg;
-    add_instruction_to_block(&r->blocks.data[generated.exit], ret);
+    add_instruction(&r->blocks.data[generated.exit], ret);
   }
   return r;
 }

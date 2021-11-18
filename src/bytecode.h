@@ -69,9 +69,6 @@ typedef struct Bytecode_Block {
   Bytecode_Instruction_Array instructions;
 } Bytecode_Block;
 
-void add_instruction_to_block(Bytecode_Block *block, Bytecode_Instruction inst);
-Bytecode_Block init_bytecode_block();
-
 GENERATE_DARRAY_HEADER(Bytecode_Block, Bytecode_Block_Array);
 
 GENERATE_DARRAY_HEADER(Type_Info, Type_Info_Array);
@@ -93,6 +90,7 @@ GENERATE_DARRAY_HEADER(Bytecode_Function, Bytecode_Function_Array);
 typedef struct Bytecode_Ast_Block {
   u32 entry;
   u32 exit;
+  u32 result_reg;
 } Bytecode_Ast_Block;
 
 void print_bytecode_instruction(Bytecode_Instruction inst);

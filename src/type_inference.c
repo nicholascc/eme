@@ -309,10 +309,14 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
       Type_Info second = infer_type_of_expr(n->second, scope, using_result, unit_poisoned);
       if(using_result) {
         if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
-        if(can_implicitly_cast(first, second))
+        if(can_implicitly_cast(first, second)) {
+          n->result_type_info = second;
           return second;
-        if(can_implicitly_cast(second, first))
+        }
+        if(can_implicitly_cast(second, first)) {
+          n->result_type_info = first;
           return first;
+        }
         error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
         return POISON_TYPE_INFO;
       }
