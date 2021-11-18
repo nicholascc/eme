@@ -221,7 +221,7 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
 
 
   LLVMPassManagerBuilderRef pass_manager_builder = LLVMPassManagerBuilderCreate();
-  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 0);
+  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 1);
   LLVMPassManagerRef pass_manager = LLVMCreatePassManager();
   LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
   LLVMPassManagerBuilderDispose(pass_manager_builder);
