@@ -10,3 +10,4 @@ out/
 *.vcxproj.user
 *.sln
 Debug/
+enc_temp_folder/
