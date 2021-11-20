@@ -392,7 +392,7 @@ Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, S
   for(int i = 0; i < node->arguments.length; i++) {
     Ast_Function_Argument *arg = node->arguments.data[i];
     assert(arg->n.type == NODE_FUNCTION_ARGUMENT);
-    arg->type_info = type_info_of_type_expr(node->return_type, scope);
+    arg->type_info = type_info_of_type_expr(arg->type, scope);
   }
 
   return NOTHING_TYPE_INFO; // placeholder
