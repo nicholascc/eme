@@ -5,3 +5,8 @@ examples/
 *.obj
 obj/
 out/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+Debug/

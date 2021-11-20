@@ -28,8 +28,8 @@ int main(int argc, char *argv[]) {
     out_obj = argv[1];
     out_asm = argv[2];
     out_ir = argv[3];
-  } else {
-    print_and_exit("I expect 1-3 arguments.\n");
+  } else if(argc != 1) {
+    print_and_exit("I expect a maximum of 3 arguments.\n");
   }
 
 
@@ -43,7 +43,6 @@ int main(int argc, char *argv[]) {
   Ast *ast;
   {
     Token_Array tokens = lex_string(contents, 0);
-    print_token_array(tokens);
     Token_Reader reader = (Token_Reader){tokens, 0, 0};
     ast = parse_file(&reader);
     free(tokens.data);
@@ -53,7 +52,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  printf("Parsed result:\n\n");
+  printf("\n\nParsed result:\n\n");
   print_ast(*ast);
 
   bool compilation_has_errors = false;

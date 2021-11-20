@@ -242,17 +242,16 @@ Token_Array lex_string(char *to_lex, int file_id) {
       Token t;
       t.loc = loc;
 
-      if(len == 2) {
-        if(0 == memcmp(symbol_str, "fn", 2)) {
-          t.type = TFN;
-        } else if(0 == memcmp(symbol_str, "if", 2)) {
-          t.type = TIF;
-        }
+      if(len == 2 && 0 == memcmp(symbol_str, "fn", 2)) {
+        t.type = TFN;
+      } else if(len == 2 && 0 == memcmp(symbol_str, "if", 2)) {
+        t.type = TIF;
       } else if(len == 4 && 0 == memcmp(symbol_str, "else", 4)) {
         t.type = TELSE;
       } else if(len == 6 && 0 == memcmp(symbol_str, "return", 6)) {
         t.type = TRETURN;
       } else {
+
         t.data.symbol = st_get_id_of(symbol_str, len);
         t.type = TSYMBOL;
       }

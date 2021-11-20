@@ -260,9 +260,7 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
       Token t = peek_token(r);
       if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
     }
-    printf("X\n");
     Ast_Node *if_true = parse_any_statement(r, scope, false);
-    printf("Y\n");
 
     save_state(r);
     Token t = peek_token(r);
@@ -386,7 +384,6 @@ Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *identifie
 
 Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
   Token t = peek_token(r);
-  print_token(t);
   if(t.type != TSYMBOL) error_unexpected_token(t);
   int length;
   char *str = st_get_str_of(t.data.symbol, &length);
@@ -632,7 +629,6 @@ Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope) {
 }
 
 Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
-  printf("X\n");
   Token identifier = peek_token(r);
   Token double_colon = peek_token(r);
   assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");

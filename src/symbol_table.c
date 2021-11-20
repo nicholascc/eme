@@ -62,7 +62,7 @@ u64 st_get_id_of(char *str, int length) {
                                    init_String_To_Id_Internal_Array(128)); // @Speed maybe use better initial reserve size?
   }
 
-  String_To_Id_Internal_Array *iarray = string_to_id_symbol_table.data + internal_index;
+  String_To_Id_Internal_Array *iarray = &string_to_id_symbol_table.data[internal_index];
 
   for(u64 i = 0; i < iarray->length; i++) {  // @Speed use more efficient search algorithm, maybe also search most recently added symbols? (since symbols are likely to be used right after being defined)
     String_To_Id_Entry entry = iarray->data[i];
