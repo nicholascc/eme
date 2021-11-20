@@ -48,7 +48,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
     arg_types[i] = llvm_type_of(fn.register_types.data[i]);
   }
 
-  LLVMValueRef llf = LLVMAddFunction(mod, "eme", LLVMFunctionType(LLVMInt64Type(), arg_types, fn.arg_count, false));
+  LLVMValueRef llf = LLVMAddFunction(mod, "eme", LLVMFunctionType(llvm_type_of(fn.return_type), arg_types, fn.arg_count, false));
   LLVMSetFunctionCallConv(llf, LLVMCCallConv);
 
   LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(llf, "");
@@ -148,6 +148,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
         case BC_RETURN: {
           LLVMValueRef a = LLVMBuildLoad(builder, r[inst.data.ret.reg], "");
+          a = generate_llvm_cast(builder, a, fn.register_types.data[inst.data.ret.reg], fn.return_type);
           LLVMBuildRet(builder, a);
           break;
         }
