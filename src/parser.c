@@ -22,12 +22,12 @@ void error_unexpected_token(Token t) {
   parse_error("The parser did not expect to encounter this token.", t.loc, true);
 }
 
-void expect_and_eat_semicolon(Lexer *l) { // WARNING: will call save_state!
-  save_state(l);
-  Token semicolon = peek_token(l);
+void expect_and_eat_semicolon(Token_Reader *r) { // WARNING: will call save_state!
+  save_state(r);
+  Token semicolon = peek_token(r);
   if(semicolon.type != TSEMICOLON) {
     parse_error("The parser did not expect to encounter this token. You might be missing a semicolon.", semicolon.loc, false);
-    revert_state(l);
+    revert_state(r);
   }
 }
 
@@ -232,9 +232,9 @@ u8 prefix_op_binding_power(Token_Type type) {
 }
 
 // Can pass a null pointer to needs_semicolon if you don't need that information.
-Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_semicolon) {
-  save_state(l);
-  Token lhs = peek_token(l);
+Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *needs_semicolon) {
+  save_state(r);
+  Token lhs = peek_token(r);
   Ast_Node *lhs_ast;
 
   bool lhs_needs_semicolon = true;
@@ -249,30 +249,30 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
 
   } else if(lhs.type == TIF) {
     {
-      Token t = peek_token(l);
+      Token t = peek_token(r);
       if(t.type != TOPEN_PAREN) {
         print_error_message("The conditional for an if statement must be parenthesized.", t.loc);
         exit(1);
       }
     }
-    Ast_Node *cond = parse_expression(l, scope, 0, NULL);
+    Ast_Node *cond = parse_expression(r, scope, 0, NULL);
     {
-      Token t = peek_token(l);
+      Token t = peek_token(r);
       if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
     }
     printf("X\n");
-    Ast_Node *if_true = parse_any_statement(l, scope, false);
+    Ast_Node *if_true = parse_any_statement(r, scope, false);
     printf("Y\n");
 
-    save_state(l);
-    Token t = peek_token(l);
+    save_state(r);
+    Token t = peek_token(r);
     Ast_Node *if_false;
 
     if(t.type == TELSE) {
-      if_false = parse_any_statement(l, scope, false);
+      if_false = parse_any_statement(r, scope, false);
       lhs_ast = if_to_ast(cond, lhs.loc, if_true, if_false);
     } else {
-      revert_state(l);
+      revert_state(r);
       if_false = allocate_ast_node(NODE_NULL, sizeof(Ast_Node));
       if_false->loc.file_id = t.loc.file_id;
       if_false->loc.line = -1;
@@ -284,18 +284,18 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
 
   } else if(is_prefix_operator(lhs)) {
     u8 power = prefix_op_binding_power(lhs.type);
-    Ast_Node *operand_ast = parse_expression(l, scope, power, NULL);
+    Ast_Node *operand_ast = parse_expression(r, scope, power, NULL);
     lhs_ast = unary_op_to_ast(lhs, operand_ast, true);
     lhs_needs_semicolon = true;
 
   } else if(lhs.type == TOPEN_BRACE) {
-    revert_state(l);
-    lhs_ast = parse_block(l, scope);
+    revert_state(r);
+    lhs_ast = parse_block(r, scope);
     lhs_needs_semicolon = false;
   } else if(lhs.type == TOPEN_PAREN) {
-    lhs_ast = parse_expression(l, scope, 0, NULL);
+    lhs_ast = parse_expression(r, scope, 0, NULL);
 
-    Token next = peek_token(l);
+    Token next = peek_token(r);
     if(next.type != TCLOSE_PAREN)
       error_unexpected_token(next);
     lhs_needs_semicolon = true;
@@ -304,25 +304,25 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
 
 
   while(1) {
-    save_state(l);
-    Token op = peek_token(l);
+    save_state(r);
+    Token op = peek_token(r);
 
     if(is_non_unary_operator(op)) {
       u8_pair powers = binary_op_binding_power(op.type);
       if(powers.left < min_power) {
-        revert_state(l);
+        revert_state(r);
         break;
       }
 
       if(op.type == TQUESTION_MARK) {
-        Ast_Node *mhs_ast = parse_expression(l, scope, 0, NULL);
-        Token next = peek_token(l);
+        Ast_Node *mhs_ast = parse_expression(r, scope, 0, NULL);
+        Token next = peek_token(r);
         if(next.type != TCOLON)
           error_unexpected_token(next);
-        Ast_Node *rhs_ast = parse_expression(l, scope, powers.right, NULL);
+        Ast_Node *rhs_ast = parse_expression(r, scope, powers.right, NULL);
         lhs_ast = if_to_ast(lhs_ast, op.loc, mhs_ast, rhs_ast);
       } else {
-        Ast_Node *rhs_ast = parse_expression(l, scope, powers.right, NULL);
+        Ast_Node *rhs_ast = parse_expression(r, scope, powers.right, NULL);
         lhs_ast = binary_op_to_ast(lhs_ast, op, rhs_ast);
       }
 
@@ -333,9 +333,9 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
       lhs_needs_semicolon = true;
 
     } else if(op.type == TOPEN_BRACKET) {
-      Ast_Node *rhs_ast = parse_expression(l, scope, 0, NULL);
+      Ast_Node *rhs_ast = parse_expression(r, scope, 0, NULL);
 
-      Token next = peek_token(l);
+      Token next = peek_token(r);
       if(next.type != TCLOSE_BRACKET) {
         error_unexpected_token(next);
       }
@@ -343,10 +343,10 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
       lhs_ast = binary_op_to_ast(lhs_ast, op, rhs_ast);
       lhs_needs_semicolon = true;
     } else if(op.type == TOPEN_PAREN) {
-      lhs_ast = parse_function_call(l, scope, lhs_ast, op);
+      lhs_ast = parse_function_call(r, scope, lhs_ast, op);
       lhs_needs_semicolon = true;
     } else {
-      revert_state(l);
+      revert_state(r);
       break;
     }
   }
@@ -355,17 +355,17 @@ Ast_Node *parse_expression(Lexer *l, Scope *scope, u8 min_power, bool *needs_sem
   return lhs_ast;
 }
 
-Ast_Node *parse_function_call(Lexer *l, Scope *scope, Ast_Node *identifier, Token open_paren) {
+Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *identifier, Token open_paren) {
   Ast_Node_Ptr_Array args = init_Ast_Node_Ptr_Array(2);
-  save_state(l);
-  Token first = peek_token(l);
+  save_state(r);
+  Token first = peek_token(r);
 
   if(first.type != TCLOSE_PAREN) {
-    revert_state(l);
+    revert_state(r);
     while(1) {
-      Ast_Node *arg = parse_expression(l, scope, 0, NULL);
+      Ast_Node *arg = parse_expression(r, scope, 0, NULL);
       Ast_Node_Ptr_Array_push(&args, arg);
-      Token t = peek_token(l);
+      Token t = peek_token(r);
       if(t.type == TCLOSE_PAREN) {
         break;
       } else if(t.type != TCOMMA) {
@@ -384,8 +384,9 @@ Ast_Node *parse_function_call(Lexer *l, Scope *scope, Ast_Node *identifier, Toke
   return n;
 }
 
-Ast_Node *parse_type(Lexer *l, Scope *scope) {
-  Token t = peek_token(l);
+Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
+  Token t = peek_token(r);
+  print_token(t);
   if(t.type != TSYMBOL) error_unexpected_token(t);
   int length;
   char *str = st_get_str_of(t.data.symbol, &length);
@@ -443,19 +444,19 @@ Ast_Node *parse_type(Lexer *l, Scope *scope) {
 }
 
 // parses definitions, expressions, statements, declarations, blocks, etc.
-Ast_Node *parse_any_statement(Lexer *l, Scope *scope, bool require_semicolon_for_expressions) {
-  save_state(l);
-  Token first = peek_token(l);
+Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semicolon_for_expressions) {
+  save_state(r);
+  Token first = peek_token(r);
 
   if(first.type == TSYMBOL) { // could be decl, definition, or expression
-    Token second = peek_token(l);
+    Token second = peek_token(r);
 
     if(second.type == TCOLON) {
-      revert_state(l);
-      return parse_decl(l, scope);
+      revert_state(r);
+      return parse_decl(r, scope);
     } else if(second.type == TDOUBLE_COLON) {
-      revert_state(l);
-      return parse_definition(l, scope);
+      revert_state(r);
+      return parse_definition(r, scope);
     }
   } else if(first.type == TSEMICOLON) {
     Ast_Node *n = allocate_ast_node(NODE_NULL, sizeof(Ast_Node));
@@ -464,28 +465,28 @@ Ast_Node *parse_any_statement(Lexer *l, Scope *scope, bool require_semicolon_for
   } else if(first.type == TRETURN) {
     Ast_Return *n = allocate_ast_node(NODE_RETURN, sizeof(Ast_Return));
     n->n.loc = first.loc;
-    n->value = parse_expression(l, scope, 0, NULL);
-    expect_and_eat_semicolon(l);
+    n->value = parse_expression(r, scope, 0, NULL);
+    expect_and_eat_semicolon(r);
     return n;
   }
 
-  revert_state(l);
+  revert_state(r);
   bool needs_semicolon;
-  Ast_Node *n = parse_expression(l, scope, 0, &needs_semicolon);
-  if(needs_semicolon && require_semicolon_for_expressions) expect_and_eat_semicolon(l);
+  Ast_Node *n = parse_expression(r, scope, 0, &needs_semicolon);
+  if(needs_semicolon && require_semicolon_for_expressions) expect_and_eat_semicolon(r);
   return n;
 }
 
-Ast_Node *parse_decl(Lexer *l, Scope *scope) {
-  Token id = peek_token(l);
-  Token colon = peek_token(l);
+Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
+  Token id = peek_token(r);
+  Token colon = peek_token(r);
   assert(colon.type == TCOLON && "(internal compiler error) declaration's second token must be a colon.");
-  save_state(l);
-  Token type = peek_token(l);
+  save_state(r);
+  Token type = peek_token(r);
 
   if(type.type == TEQUALS) {
-    Ast_Node *value_ast = parse_expression(l, scope, 0, NULL);
-    expect_and_eat_semicolon(l);
+    Ast_Node *value_ast = parse_expression(r, scope, 0, NULL);
+    expect_and_eat_semicolon(r);
     Ast_Untyped_Decl_Set *n = allocate_ast_node(NODE_UNTYPED_DECL_SET, sizeof(Ast_Untyped_Decl_Set));
     n->n.loc = colon.loc;
     n->symbol = id.data.symbol;
@@ -493,9 +494,9 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
     n->type_info = UNKNOWN_TYPE_INFO;
     return n;
   } else {
-    revert_state(l);
-    Ast_Node *type_ast = parse_type(l, scope);
-    Token equals = peek_token(l);
+    revert_state(r);
+    Ast_Node *type_ast = parse_type(r, scope);
+    Token equals = peek_token(r);
     if(equals.type == TSEMICOLON) {
       // just decl
       Ast_Typed_Decl *n = allocate_ast_node(NODE_TYPED_DECL, sizeof(Ast_Typed_Decl));
@@ -506,8 +507,8 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
       return n;
     } else if(equals.type == TEQUALS) {
       // decl with type and set
-      Ast_Node *value_ast = parse_expression(l, scope, 0, NULL);
-      expect_and_eat_semicolon(l);
+      Ast_Node *value_ast = parse_expression(r, scope, 0, NULL);
+      expect_and_eat_semicolon(r);
       Ast_Typed_Decl_Set *n = allocate_ast_node(NODE_TYPED_DECL_SET, sizeof(Ast_Typed_Decl_Set));
       n->n.loc = colon.loc;
       n->symbol = id.data.symbol;
@@ -521,7 +522,7 @@ Ast_Node *parse_decl(Lexer *l, Scope *scope) {
   }
 }
 
-Ast *parse_file(Lexer *l) {
+Ast *parse_file(Token_Reader *r) {
   Ast *result = malloc(sizeof(Ast));
   result->compilation_units = init_Compilation_Unit_Ptr_Array(32);
   result->scope.is_ordered = false;
@@ -529,13 +530,13 @@ Ast *parse_file(Lexer *l) {
   result->scope.entries = init_Scope_Entry_Array(2);
 
   while(1) {
-    save_state(l);
-    Token next = peek_token(l);
-    revert_state(l);
+    save_state(r);
+    Token next = peek_token(r);
+    revert_state(r);
     if(next.type == TEOL)
       return result;
 
-    Ast_Node *node = parse_any_statement(l, &result->scope, true);
+    Ast_Node *node = parse_any_statement(r, &result->scope, true);
     Compilation_Unit *declaration_unit; // to be referred to in the corresponding Scope_Entry
     if(node->type == NODE_FUNCTION_DEFINITION) {
       // A function is represented by a signature and body which must be
@@ -587,8 +588,8 @@ Ast *parse_file(Lexer *l) {
   }
 }
 
-Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
-  Token first = peek_token(l);
+Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope) {
+  Token first = peek_token(r);
   assert(first.type == TOPEN_BRACE && "(internal compiler error) block must begin with open brace");
 
   Ast_Block *result = allocate_ast_node(NODE_BLOCK, sizeof(Ast_Block));
@@ -602,15 +603,15 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
   scope->entries = init_Scope_Entry_Array(2);
 
   while(1) {
-    save_state(l);
-    Token next = peek_token(l);
+    save_state(r);
+    Token next = peek_token(r);
     if(next.type == TCLOSE_BRACE)
       return result;
     else if(next.type == TEOL)
       parse_error("'{' has no matching '}'", first.loc, true);
-    revert_state(l);
+    revert_state(r);
 
-    Ast_Node *node = parse_any_statement(l, scope, true);
+    Ast_Node *node = parse_any_statement(r, scope, true);
     Ast_Node_Ptr_Array_push(statements, node);
 
     if(node->type == NODE_TYPED_DECL ||
@@ -630,16 +631,16 @@ Ast_Node *parse_block(Lexer *l, Scope *parent_scope) {
   }
 }
 
-Ast_Node *parse_definition(Lexer *l, Scope *scope) {
+Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
   printf("X\n");
-  Token identifier = peek_token(l);
-  Token double_colon = peek_token(l);
+  Token identifier = peek_token(r);
+  Token double_colon = peek_token(r);
   assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");
-  Token fn = peek_token(l);
+  Token fn = peek_token(r);
 
   if(fn.type != TFN) parse_error("Unexpected token. Only function definitions (using 'fn') are currently supported.", fn.loc, true);
 
-  Token open_paren = peek_token(l);
+  Token open_paren = peek_token(r);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 
   Ast_Function_Definition *n = allocate_ast_node(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
@@ -652,12 +653,12 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
   Ast_Node_Ptr_Array arguments = init_Ast_Node_Ptr_Array(2);
 
   while(1) {
-    Token sym = peek_token(l);
+    Token sym = peek_token(r);
     if(sym.type != TSYMBOL) error_unexpected_token(sym);
-    Token colon = peek_token(l);
+    Token colon = peek_token(r);
     if(colon.type != TCOLON) error_unexpected_token(colon);
 
-    Ast_Node *type = parse_type(l, scope); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
+    Ast_Node *type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
     Ast_Function_Argument *arg = allocate_ast_node(NODE_FUNCTION_ARGUMENT, sizeof(Ast_Function_Argument));
     arg->n.loc = colon.loc;
     arg->symbol = sym.data.symbol;
@@ -670,15 +671,15 @@ Ast_Node *parse_definition(Lexer *l, Scope *scope) {
     e.declaration.node = arg;
     Scope_Entry_Array_push(&n->scope.entries, e);
 
-    Token next = peek_token(l);
+    Token next = peek_token(r);
     if(next.type == TCLOSE_PAREN) break;
     else if(next.type != TCOMMA) error_unexpected_token(next);
   }
-  Token arrow = peek_token(l);
+  Token arrow = peek_token(r);
   if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
 
-  Ast_Node *return_type = parse_type(l, scope); // we are using the parent scope here because this should be not be able to use the arguments (at least for now...)
-  Ast_Node *body = parse_block(l, &n->scope);
+  Ast_Node *return_type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use the arguments (at least for now...)
+  Ast_Node *body = parse_block(r, &n->scope);
 
 
   n->symbol = identifier.data.symbol;

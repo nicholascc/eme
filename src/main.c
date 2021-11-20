@@ -37,9 +37,17 @@ int main(int argc, char *argv[]) {
   init_file_array();
 
   char *contents = add_file("./examples/test.eme");
-  printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
-  Lexer lexer = new_lexer(contents, 0);
-  Ast *ast = parse_file(&lexer);
+  //printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
+  printf("\n\n");
+
+  Ast *ast;
+  {
+    Token_Array tokens = lex_string(contents, 0);
+    print_token_array(tokens);
+    Token_Reader reader = (Token_Reader){tokens, 0, 0};
+    ast = parse_file(&reader);
+    free(tokens.data);
+  }
   if(should_exit_after_parsing) {
     printf("An error occurred during parsing, exiting.\n");
     exit(1);

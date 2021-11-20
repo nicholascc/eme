@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include "c-utils/integer.h"
+#include "c-utils/darray.h"
 #include "errors.h"
 
 typedef enum Token_Type {
@@ -79,30 +80,26 @@ typedef struct Token {
   } data;
 } Token;
 
+GENERATE_DARRAY_HEADER(Token, Token_Array);
+
 void print_token(Token token);
+void print_token_array(Token_Array tokens);
 
-typedef struct Lexer_State {
-  int i;
-  int comment_level; // allows for nested /* and */
-  Location loc;
-  bool line_is_commented; // have we seen a '//' comment on this line already?
-  bool finished;
-  char *to_lex;
-} Lexer_State;
 
-typedef struct Lexer {
-  Lexer_State saved_state;
-  Lexer_State s;
-} Lexer; // stack (darray) of Lexer_States defined in lexer.c
+typedef struct Token_Reader {
+  Token_Array tokens;
+  u32 current;
+  u32 saved;
+} Token_Reader;
 
 /*
   @Incomplete TODO: Add big lexer explanation comment;
 */
 
 // to_lex must be zero-terminated and have at least one character of whitespace at the end
-Lexer new_lexer(char *to_lex, int file_id);
-Token peek_token(Lexer *l);
-void save_state(Lexer *l);
-void revert_state(Lexer *l);
+Token_Array lex_string(char *to_lex, int file_id);
+void save_state(Token_Reader *r);
+void revert_state(Token_Reader *r);
+Token peek_token(Token_Reader *r);
 
 #endif /* end of include guard: LEXER_H */
