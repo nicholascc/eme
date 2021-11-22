@@ -57,7 +57,9 @@ void print_bytecode_block(Bytecode_Block block) {
 }
 
 void print_bytecode_function(Bytecode_Function fn) {
-  printf("function :: {\n");
+  printf("function :: (%i) -> ", fn.arg_count);
+  print_type_info(fn.return_type);
+  printf(" {\n");
   printf("  .registers :: {\n");
   for(int i = 0; i < fn.register_types.length; i++) {
     printf("    %i: ", i);
@@ -67,7 +69,9 @@ void print_bytecode_function(Bytecode_Function fn) {
   printf("  }\n");
   printf("  .blocks :: {\n");
   for(int i = 0; i < fn.blocks.length; i++) {
-    printf("    %i:\n", i);
+    printf("    %i", i);
+    if(i == fn.entry_block) printf(" (entry)");
+    printf(":\n");
     print_bytecode_block(fn.blocks.data[i]);
   }
   printf("  }\n}\n");
