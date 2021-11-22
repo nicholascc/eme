@@ -45,6 +45,7 @@ Type_Info UNKNOWN_TYPE_INFO;
 Type_Info NOTHING_TYPE_INFO;
 Type_Info POISON_TYPE_INFO;
 Type_Info BOOL_TYPE_INFO;
+#define INT_TYPE_INFO(is_signed,width) ((Type_Info){TYPE_INT,0,{.integer={is_signed, width}}})
 
 typedef enum Ast_Node_Type {
   NODE_NULL,

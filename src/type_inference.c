@@ -74,12 +74,7 @@ bool can_implicitly_cast(Type_Info before, Type_Info after) {
 Type_Info solidify_type(Type_Info x, Ast_Node node) {
   if(x.type == TYPE_POISON) return POISON_TYPE_INFO;
   else if(x.type == TYPE_UNKNOWN_INT) {
-    Type_Info r;
-    r.type = TYPE_INT;
-    r.reference_count = 0;
-    r.data.integer.is_signed = true;
-    r.data.integer.width = 64;
-    return r;
+    return INT_TYPE_INFO(true, 64);
   } else if(x.type == TYPE_INT || x.type == TYPE_BOOL)
     return x;
   else {

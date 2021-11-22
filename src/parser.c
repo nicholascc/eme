@@ -433,9 +433,7 @@ Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
     else parse_error("I expected a primitive type.", t.loc, true);
   } else parse_error("I expected a primitive type.", t.loc, true);
 
-  n->type_info.type = TYPE_INT;
-  n->type_info.data.integer.is_signed = is_signed;
-  n->type_info.data.integer.width = width;
+  n->type_info = INT_TYPE_INFO(is_signed, width);
 
   return n;
 }

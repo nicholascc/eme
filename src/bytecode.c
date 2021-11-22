@@ -324,9 +324,7 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
   r->entry_block = generated.entry;
 
   // USE ACTUAL RETURN TYPE HERE
-  r->return_type.type = TYPE_INT;
-  r->return_type.data.integer.is_signed = true;
-  r->return_type.data.integer.width = 64;
+  r->return_type = INT_TYPE_INFO(true, 64);
 
 
   // add a default return if the block isn't concluded, since every block must be concluded
