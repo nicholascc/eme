@@ -20,7 +20,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       break;
     }
     case BC_LESS_THAN: {
-      printf("less_than r%i <- r%i r%i\n", inst.data.bin_conv_op.reg_a, inst.data.bin_conv_op.reg_b, inst.data.bin_conv_op.reg_c);
+      printf("less_than r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
     }
     case BC_SET_LITERAL: {
@@ -135,13 +135,11 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         case OPLESS_THAN: {
           Bytecode_Instruction inst;
           inst.type = BC_LESS_THAN;
-          inst.data.bin_conv_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
-          inst.data.bin_conv_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
-          inst.data.bin_conv_op.reg_a = add_register(fn, BOOL_TYPE_INFO);
-          assert(n->convert_to.type == TYPE_INT);
-          inst.data.bin_conv_op.conv_type = n->convert_to;
+          inst.data.bin_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
+          inst.data.bin_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
+          inst.data.bin_op.reg_a = add_register(fn, BOOL_TYPE_INFO);
           add_instruction(&fn->blocks.data[*block], inst);
-          return inst.data.bin_conv_op.reg_a;
+          return inst.data.bin_op.reg_a;
         } // should combine these two cases above into single simplified code
         case OPSET_EQUALS: {
           u64 symbol;

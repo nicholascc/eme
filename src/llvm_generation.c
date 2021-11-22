@@ -23,7 +23,7 @@ LLVMTypeRef llvm_type_of(Type_Info type) {
   }
 }
 
-LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type_Info a_type, Type_Info b_type) {
+inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type_Info a_type, Type_Info b_type) {
   assert(a_type.type == TYPE_INT &&
          b_type.type == TYPE_INT);
   u8 a_width = a_type.data.integer.width;
@@ -108,21 +108,20 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
 
         case BC_LESS_THAN: {
-          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_conv_op.reg_b], "");
-          LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_conv_op.reg_c], "");
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
+          LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
+          Type_Info b_type = fn.register_types.data[inst.data.bin_op.reg_b];
+          Type_Info c_type = fn.register_types.data[inst.data.bin_op.reg_c];
+          assert(b_type.type == TYPE_INT && c_type.type == TYPE_INT);
 
-          Type_Info conv_type = inst.data.bin_conv_op.conv_type;
-          assert(conv_type.type == TYPE_INT);
-          {
-            Type_Info b_type = fn.register_types.data[inst.data.bin_conv_op.reg_b];
-            Type_Info c_type = fn.register_types.data[inst.data.bin_conv_op.reg_c];
+          Type_Info conv_type = INT_TYPE_INFO(b_type.data.integer.is_signed || c_type.data.integer.is_signed, max(b_type.data.integer.width, c_type.data.integer.width));
 
-            b = generate_llvm_cast(builder, b, b_type, conv_type);
-            c = generate_llvm_cast(builder, c, c_type, conv_type);
-          }
+          b = generate_llvm_cast(builder, b, b_type, conv_type);
+          c = generate_llvm_cast(builder, c, c_type, conv_type);
+
           LLVMIntPredicate pred = conv_type.data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
           LLVMValueRef a = LLVMBuildICmp(builder, pred, b, c, "");
-          LLVMBuildStore(builder, a, r[inst.data.bin_conv_op.reg_a]);
+          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;
         }
 

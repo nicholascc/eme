@@ -40,13 +40,6 @@ typedef struct Bytecode_Instruction {
     } bin_op;
 
     struct {
-      Type_Info conv_type;
-      u32 reg_a;
-      u32 reg_b;
-      u32 reg_c;
-    } bin_conv_op; // Binary operator where the type to convert to must be specified. E.g. comparisons
-
-    struct {
       u32 reg;
     } ret;
 

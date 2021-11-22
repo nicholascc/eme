@@ -36,17 +36,14 @@ void interpret_bytecode_function(Bytecode_Function fn) {
         break;
       }
       case BC_LESS_THAN: {
-        u32 a = inst.data.bin_conv_op.reg_a;
-        u32 b = inst.data.bin_conv_op.reg_b;
-        u32 c = inst.data.bin_conv_op.reg_c;
+        u32 a = inst.data.bin_op.reg_a;
+        u32 b = inst.data.bin_op.reg_b;
+        u32 c = inst.data.bin_op.reg_c;
         Type_Info b_type = fn.register_types.data[b];
         Type_Info c_type = fn.register_types.data[c];
-        Type_Info conv_type = inst.data.bin_conv_op.conv_type;
-        assert(b_type.type == TYPE_INT &&
-               c_type.type == TYPE_INT &&
-               conv_type.type == TYPE_INT);
+        assert(b_type.type == TYPE_INT && c_type.type == TYPE_INT);
         // better way to do this comparison?
-        if(conv_type.data.integer.is_signed) {
+        if(b_type.data.integer.is_signed || c_type.data.integer.is_signed) {
           s64 *bv = &r[b];
           s64 *cv = &r[c];
           r[a] = *bv < *cv;
