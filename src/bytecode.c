@@ -324,9 +324,7 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
   u32 entry_result_reg;
   Bytecode_Ast_Block generated = generate_bytecode_block(defn->body, r, scope);
   r->entry_block = generated.entry;
-
-  // USE ACTUAL RETURN TYPE HERE
-  r->return_type = INT_TYPE_INFO(true, 64);
+  r->return_type = defn->return_type_info;
 
 
   // add a default return if the block isn't concluded, since every block must be concluded

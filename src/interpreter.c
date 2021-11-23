@@ -12,7 +12,6 @@ void interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
   int inst_i = 0;
   while(true) {
     Bytecode_Instruction inst = block.instructions.data[inst_i];
-    print_bytecode_instruction(inst);
     switch(inst.type) {
       case BC_ADD:
       case BC_SUB: {
