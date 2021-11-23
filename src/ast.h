@@ -84,6 +84,10 @@ typedef struct Ast_Node {
   Location loc;
 } Ast_Node;
 
+// You should only use this if you don't know anything about the Ast node, not even
+// its file.
+Ast_Node NULL_AST_NODE;
+
 GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
 typedef struct Bytecode_Function Bytecode_Function;

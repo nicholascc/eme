@@ -11,8 +11,8 @@ void type_inference_error(char *message, Location l, bool *unit_poisoned) {
   *unit_poisoned = true;
 }
 
-void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Ast_Node node, bool cast_either_way, bool *unit_poisoned) {
-  type_inference_error(NULL, node.loc, unit_poisoned);
+void error_cannot_implicitly_cast(Type_Info a, Type_Info b, Location loc, bool cast_either_way, bool *unit_poisoned) {
+  type_inference_error(NULL, loc, unit_poisoned);
   printf("I cannot implicitly cast ");
   print_type_info(a);
   printf(" -> ");
@@ -98,7 +98,7 @@ Type_Info type_info_of_type_expr(Ast_Node *type_node, bool *unit_poisoned) {
   return n->type_info;
 }
 
-Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope, bool *unit_poisoned) {
+Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope, Ast_Function_Definition *fn_def, bool *unit_poisoned) {
   if(decl->type == NODE_TYPED_DECL) {
     Ast_Typed_Decl *n = (Ast_Typed_Decl *)decl;
     if(n->type_info.type == TYPE_UNKNOWN) n->type_info = type_info_of_type_expr(n->type, unit_poisoned);
@@ -108,7 +108,7 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope, bool *unit_poiso
     Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)decl;
     if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true, unit_poisoned);
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope, fn_def, true, unit_poisoned);
     Type_Info given_type = type_info_of_type_expr(n->type, unit_poisoned);
 
     if(inferred_type.type == TYPE_POISON || given_type.type == TYPE_POISON) {
@@ -118,7 +118,7 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope, bool *unit_poiso
       n->type_info = given_type;
       return given_type;
     } else {
-      error_cannot_implicitly_cast(inferred_type, given_type, n->n, false, unit_poisoned);
+      error_cannot_implicitly_cast(inferred_type, given_type, n->n.loc, false, unit_poisoned);
       n->type_info = POISON_TYPE_INFO;
       return POISON_TYPE_INFO;
     }
@@ -130,7 +130,7 @@ Type_Info infer_type_info_of_decl(Ast_Node *decl, Scope *scope, bool *unit_poiso
     Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)decl;
     if(n->type_info.type != TYPE_UNKNOWN) return n->type_info;
 
-    Type_Info inferred_type = infer_type_of_expr(n->value, scope, true, unit_poisoned);
+    Type_Info inferred_type = infer_type_of_expr(n->value, scope, fn_def, true, unit_poisoned);
     n->type_info = solidify_type(inferred_type, n->n);
     if(n->type_info.type == TYPE_POISON) *unit_poisoned = true;
     return n->type_info;
@@ -148,7 +148,7 @@ Type_Info infer_type_info_of_decl_unit(Compilation_Unit *unit, Scope *scope) {
     return POISON_TYPE_INFO;
   }
   unit->type_inference_seen = true;
-  Type_Info r = infer_type_info_of_decl(unit->node, scope, &unit->poisoned);
+  Type_Info r = infer_type_info_of_decl(unit->node, scope, &NULL_AST_NODE, &unit->poisoned);
   unit->type_inferred = true;
   return r;
 }
@@ -200,7 +200,7 @@ Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *no
   }
 }
 
-Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bool *unit_poisoned) {
+Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, Ast_Function_Definition *fn_def, bool using_result, bool *unit_poisoned) {
   switch(node->type) {
     case NODE_LITERAL:
       return ((Ast_Literal*)node)->type;
@@ -211,8 +211,8 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
         case OPMINUS:
         case OPMUL:
         case OPDIV: {
-          Type_Info first = infer_type_of_expr(n->first, scope, true, unit_poisoned);
-          Type_Info second = infer_type_of_expr(n->second, scope, true, unit_poisoned);
+          Type_Info first = infer_type_of_expr(n->first, scope, fn_def, true, unit_poisoned);
+          Type_Info second = infer_type_of_expr(n->second, scope, fn_def, true, unit_poisoned);
           if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
 
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
@@ -232,7 +232,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
             n->convert_to = solidify_type(first, *node);
             return first;
           }
-          error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
+          error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
           n->convert_to = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
@@ -241,8 +241,8 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
         case OPLESS_THAN_OR_EQUAL_TO:
         case OPGREATER_THAN:
         case OPGREATER_THAN_OR_EQUAL_TO: {
-          Type_Info first = infer_type_of_expr(n->first, scope, true, unit_poisoned);
-          Type_Info second = infer_type_of_expr(n->second, scope, true, unit_poisoned);
+          Type_Info first = infer_type_of_expr(n->first, scope, fn_def, true, unit_poisoned);
+          Type_Info second = infer_type_of_expr(n->second, scope, fn_def, true, unit_poisoned);
           if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
           if((first.type != TYPE_INT && first.type != TYPE_UNKNOWN_INT) ||
              (second.type != TYPE_INT && second.type != TYPE_UNKNOWN_INT))
@@ -252,7 +252,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
           else if(can_implicitly_cast(second, first))
             n->convert_to = solidify_type(first, *node);
           else {
-            error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
+            error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
             n->convert_to = POISON_TYPE_INFO;
             return POISON_TYPE_INFO;
           }
@@ -263,8 +263,8 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
           if(!scope->is_ordered) {
             type_inference_error("You cannot use a set statement outside of a block.", node->loc, unit_poisoned);
           }
-          Type_Info left = infer_type_of_expr(n->first, scope, true, unit_poisoned);
-          Type_Info right = infer_type_of_expr(n->second, scope, true, unit_poisoned);
+          Type_Info left = infer_type_of_expr(n->first, scope, fn_def, true, unit_poisoned);
+          Type_Info right = infer_type_of_expr(n->second, scope, fn_def, true, unit_poisoned);
           if(left.type == TYPE_POISON || right.type == TYPE_POISON) {
             n->convert_to = POISON_TYPE_INFO;
             return POISON_TYPE_INFO;
@@ -274,7 +274,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
             if(n->convert_to.type == TYPE_POISON) *unit_poisoned = true;
             return left;
           }
-          error_cannot_implicitly_cast(right, left, *node, false, unit_poisoned);
+          error_cannot_implicitly_cast(right, left, node->loc, false, unit_poisoned);
           n->convert_to = POISON_TYPE_INFO;
           return POISON_TYPE_INFO;
         }
@@ -289,19 +289,29 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
       return get_type_of_identifier_in_scope(((Ast_Symbol*)node)->symbol, scope, node, unit_poisoned);
     }
     case NODE_BLOCK: {
-      return infer_types_of_block(node, using_result, unit_poisoned);
+      return infer_types_of_block(node, fn_def, using_result, unit_poisoned);
     }
     case NODE_RETURN: {
       Ast_Return *n = node;
-      return infer_type_of_expr(n->value, scope, using_result, unit_poisoned);
+      Type_Info value = infer_type_of_expr(n->value, scope, fn_def, using_result, unit_poisoned);
+      if(value.type == TYPE_POISON) return POISON_TYPE_INFO;
+      if(fn_def->n.type == NODE_NULL) {
+        type_inference_error("Cannot return outside of a function body", node->loc, unit_poisoned);
+        return POISON_TYPE_INFO;
+      }
+      if(!can_implicitly_cast(value, fn_def->return_type_info)) {
+        error_cannot_implicitly_cast(value, fn_def->return_type_info, node->loc, false, unit_poisoned);
+        return POISON_TYPE_INFO;
+      }
+      return fn_def->return_type_info;
     }
     case NODE_IF: {
       Ast_If *n = node;
       n->result_is_used = using_result;
-      Type_Info cond = infer_type_of_expr(n->cond, scope, true, unit_poisoned);
+      Type_Info cond = infer_type_of_expr(n->cond, scope, fn_def, true, unit_poisoned);
       if(cond.type != TYPE_BOOL) type_inference_error("The conditional of an if statement must be a boolean value.", n->cond->loc, unit_poisoned);
-      Type_Info first = infer_type_of_expr(n->first, scope, using_result, unit_poisoned);
-      Type_Info second = infer_type_of_expr(n->second, scope, using_result, unit_poisoned);
+      Type_Info first = infer_type_of_expr(n->first, scope, fn_def, using_result, unit_poisoned);
+      Type_Info second = infer_type_of_expr(n->second, scope, fn_def, using_result, unit_poisoned);
       if(using_result) {
         if(first.type == TYPE_POISON || second.type == TYPE_POISON) return POISON_TYPE_INFO;
         if(can_implicitly_cast(first, second)) {
@@ -312,7 +322,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
           n->result_type_info = first;
           return first;
         }
-        error_cannot_implicitly_cast(second, first, *node, true, unit_poisoned);
+        error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
         return POISON_TYPE_INFO;
       }
       return NOTHING_TYPE_INFO;
@@ -329,7 +339,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, bool using_result, bo
   }
 }
 
-Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *unit_poisoned) {
+Type_Info infer_types_of_block(Ast_Node *node_block, Ast_Function_Definition *fn_def, bool using_result, bool *unit_poisoned) {
   assert(node_block->type == NODE_BLOCK);
   Type_Info last_statement_type = NOTHING_TYPE_INFO;
   Ast_Block *block = (Ast_Block *) node_block;
@@ -343,21 +353,16 @@ Type_Info infer_types_of_block(Ast_Node *node_block, bool using_result, bool *un
       case NODE_IF:
       case NODE_FUNCTION_CALL:
       case NODE_SYMBOL:
-      case NODE_BLOCK: {
-        last_statement_type = infer_type_of_expr(node, &block->scope, using_this_result, unit_poisoned);
+      case NODE_BLOCK:
+      case NODE_RETURN: {
+        last_statement_type = infer_type_of_expr(node, &block->scope, fn_def, using_this_result, unit_poisoned);
         break;
       }
 
       case NODE_TYPED_DECL:
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {
-        last_statement_type = infer_type_info_of_decl(node, &block->scope, unit_poisoned);
-        break;
-      }
-
-      case NODE_RETURN: {
-        Ast_Return *n = node;
-        last_statement_type = infer_type_of_expr(n->value, &block->scope, true, unit_poisoned);
+        last_statement_type = infer_type_info_of_decl(node, &block->scope, fn_def, unit_poisoned);
         break;
       }
 
@@ -414,8 +419,10 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
       infer_types_of_compilation_unit(sig, scope);
       if(sig->poisoned) {
         unit->poisoned = true;
-      } else if(infer_types_of_block(((Ast_Function_Definition*)unit->node)->body, false, &unit->poisoned).type == TYPE_POISON) {
-        unit->poisoned = true;
+      } else {
+        Ast_Function_Definition *node = unit->node;
+        if(infer_types_of_block(node->body, node, false, &unit->poisoned).type == TYPE_POISON)
+          unit->poisoned = true;
       }
       break;
     }

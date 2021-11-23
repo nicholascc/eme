@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "c-utils/darray.h"
 #include "symbol_table.h"
+#include "errors.h"
 
 GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
@@ -12,6 +13,8 @@ Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
 Type_Info NOTHING_TYPE_INFO = {TYPE_NOTHING, 0, {0}};
 Type_Info POISON_TYPE_INFO  = {TYPE_POISON,  0, {0}};
 Type_Info BOOL_TYPE_INFO = {TYPE_BOOL, 0, {0}};
+
+Ast_Node NULL_AST_NODE = {NODE_NULL, {-1,-1,-1}};
 
 
 Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size) {
