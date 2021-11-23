@@ -68,7 +68,9 @@ int main(int argc, char *argv[]) {
         compilation_has_errors = true;
       } else {
         print_bytecode_compilation_unit(body);
-        interpret_bytecode_function(*body->bytecode.function);
+        Bytecode_Function fn = *body->bytecode.function;
+        u64 *env = init_interpreted_function_environment(fn);
+        interpret_bytecode_function(fn, env);
       }
     }
   }

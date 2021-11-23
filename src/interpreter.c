@@ -3,13 +3,16 @@
 #include "c-utils/integer.h"
 #include "bytecode.h"
 
-void interpret_bytecode_function(Bytecode_Function fn) {
-  int register_count = fn.register_types.length;
-  u64 *r = malloc(sizeof(u64) * register_count);
+u64 *init_interpreted_function_environment(Bytecode_Function fn) {
+  return malloc(sizeof(u64) * fn.register_types.length);
+}
+
+void interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
   Bytecode_Block block = fn.blocks.data[fn.entry_block];
   int inst_i = 0;
   while(true) {
     Bytecode_Instruction inst = block.instructions.data[inst_i];
+    print_bytecode_instruction(inst);
     switch(inst.type) {
       case BC_ADD:
       case BC_SUB: {
