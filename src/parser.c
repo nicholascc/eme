@@ -668,7 +668,7 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
       else if(next.type != TCOMMA) error_unexpected_token(next);
     }
   }
-  
+
   Token arrow = peek_token(r);
   if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
 

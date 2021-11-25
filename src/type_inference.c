@@ -290,7 +290,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, Ast_Function_Definiti
     }
     case NODE_RETURN: {
       Ast_Return *n = node;
-      Type_Info value = infer_type_of_expr(n->value, scope, fn_def, using_result, unit_poisoned);
+      Type_Info value = infer_type_of_expr(n->value, scope, fn_def, true, unit_poisoned);
       if(value.type == TYPE_POISON) return POISON_TYPE_INFO;
       if(fn_def->n.type == NODE_NULL) {
         type_inference_error("Cannot return outside of a function body", node->loc, unit_poisoned);
