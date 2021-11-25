@@ -40,17 +40,29 @@ inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, T
 }
 
 
+// counterintuitively, the compilation unit supplied here must be a function body.
+void generate_llvm_function_signature(LLVMModuleRef mod, Compilation_Unit unit) {
+  assert(unit.type == UNIT_FUNCTION_BODY);
+  Bytecode_Function *fn = unit.bytecode.function;
+  LLVMValueRef *arg_types = malloc(fn->arg_count * sizeof(LLVMTypeRef));
+  for(int i = 0; i < fn->arg_count; i++) {
+    arg_types[i] = llvm_type_of(fn->register_types.data[i]);
+  }
+
+  char *name = st_get_str_of(((Ast_Function_Definition *)unit.node)->symbol);
+
+  LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(fn->return_type), arg_types, fn->arg_count, false));
+  LLVMSetFunctionCallConv(llf, LLVMCCallConv);
+
+  fn->llvm_function =  llf;
+}
+
+
+
 void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_Function fn) {
   char *error = NULL;
 
-  LLVMValueRef *arg_types = malloc(fn.arg_count * sizeof(LLVMTypeRef));
-  for(int i = 0; i < fn.arg_count; i++) {
-    arg_types[i] = llvm_type_of(fn.register_types.data[i]);
-  }
-
-  LLVMValueRef llf = LLVMAddFunction(mod, "eme", LLVMFunctionType(llvm_type_of(fn.return_type), arg_types, fn.arg_count, false));
-  LLVMSetFunctionCallConv(llf, LLVMCCallConv);
-
+  LLVMValueRef llf = fn.llvm_function;
   LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(llf, "");
 
   LLVMBasicBlockRef *llblocks = malloc(sizeof(LLVMBasicBlockRef) * fn.blocks.length);
@@ -61,15 +73,13 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
   LLVMValueRef *r = malloc(fn.register_types.length * sizeof(LLVMValueRef));
   {
     LLVMPositionBuilderAtEnd(builder, entry_block);
-    for(int i = 0; i < fn.arg_count; i++) {
-      LLVMTypeRef type = arg_types[i];
-      LLVMValueRef arg = LLVMGetParam(llf, i);
-      r[i] = LLVMBuildAlloca(builder, type, "");
-      LLVMBuildStore(builder, arg, r[i]);
-    }
-    for(int i = fn.arg_count; i < fn.register_types.length; i++) {
+    for(int i = 0; i < fn.register_types.length; i++) {
       LLVMTypeRef type = llvm_type_of(fn.register_types.data[i]);
       r[i] = LLVMBuildAlloca(builder, type, "");
+      if(i < fn.arg_count) {
+        LLVMValueRef arg = LLVMGetParam(llf, i);
+        LLVMBuildStore(builder, arg, r[i]);
+      }
     }
     LLVMBuildBr(builder, llblocks[fn.entry_block]);
   }
@@ -145,6 +155,28 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
           break;
         }
+        case BC_CALL: {
+          Bytecode_Function to_call = *inst.data.call.to;
+          u32 result_reg = inst.data.call.reg;
+          LLVMValueRef llto_call = to_call.llvm_function;
+          LLVMValueRef *args = malloc(to_call.arg_count *sizeof(LLVMValueRef));
+          for(int k = 0; k < to_call.arg_count; k++) {
+            j++;
+            inst = block.instructions.data[j];
+            assert(inst.type == BC_ARG);
+            u32 reg = inst.data.arg.reg;
+            LLVMValueRef loaded = LLVMBuildLoad(builder, r[reg], "");
+            args[k] = generate_llvm_cast(builder, loaded, fn.register_types.data[reg], to_call.register_types.data[k]);
+          }
+          LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, to_call.arg_count, "");
+          LLVMBuildStore(builder, a, r[result_reg]);
+          break;
+        }
+        case BC_ARG: {
+          printf("Internal compiler error: Encountered an arg bytecode instruction not following a call instruction.\n");
+          print_bytecode_instruction(inst);
+          exit(1);
+        }
         case BC_RETURN: {
           LLVMValueRef a = LLVMBuildLoad(builder, r[inst.data.ret.reg], "");
           a = generate_llvm_cast(builder, a, fn.register_types.data[inst.data.ret.reg], fn.return_type);
@@ -182,13 +214,18 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
 
   LLVMModuleRef mod = LLVMModuleCreateWithName("main_module");
 
+  for(int i = 0; i < ast.compilation_units.length; i++) {
+    Compilation_Unit unit = *ast.compilation_units.data[i];
+    if(unit.type != UNIT_FUNCTION_BODY) continue;
+    assert(unit.bytecode_generated);
+    generate_llvm_function_signature(mod, unit);
+  }
 
   LLVMBuilderRef builder = LLVMCreateBuilder();
 
   for(int i = 0; i < ast.compilation_units.length; i++) {
     Compilation_Unit unit = *ast.compilation_units.data[i];
     if(unit.type != UNIT_FUNCTION_BODY) continue;
-    assert(unit.bytecode_generated);
     Bytecode_Function fn = *unit.bytecode.function;
     generate_llvm_function(mod, builder, fn);
   }

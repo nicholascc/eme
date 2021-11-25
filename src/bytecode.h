@@ -5,6 +5,7 @@
 #include "c-utils/darray.h"
 
 #include "ast.h"
+#include <llvm-c/Core.h>
 
 typedef enum Bytecode_Instruction_Type {
   BC_ADD,
@@ -14,6 +15,9 @@ typedef enum Bytecode_Instruction_Type {
 
   BC_SET,
   BC_SET_LITERAL,
+
+  BC_CALL,
+  BC_ARG,
 
   BC_RETURN,
   BC_BRANCH,
@@ -40,6 +44,15 @@ typedef struct Bytecode_Instruction {
     } bin_op;
 
     struct {
+      Bytecode_Function *to;
+      u32 reg;
+    } call;
+
+    struct {
+      u32 reg;
+    } arg;
+
+    struct {
       u32 reg;
     } ret;
 
@@ -58,8 +71,8 @@ typedef struct Bytecode_Instruction {
 GENERATE_DARRAY_HEADER(Bytecode_Instruction, Bytecode_Instruction_Array);
 
 typedef struct Bytecode_Block {
-  bool is_concluded; // specifies whether the block is finished, i.e. it ends with a branch
   Bytecode_Instruction_Array instructions;
+  bool is_concluded; // specifies whether the block is finished, i.e. it ends with a branch
 } Bytecode_Block;
 
 GENERATE_DARRAY_HEADER(Bytecode_Block, Bytecode_Block_Array);
@@ -69,10 +82,11 @@ GENERATE_DARRAY_HEADER(Type_Info, Type_Info_Array);
 typedef struct Bytecode_Function {
   // For a function with n arguments, the arguments are passed in through the first n registers.
   u32 arg_count;
+  u32 entry_block;
   Type_Info_Array register_types;
   Bytecode_Block_Array blocks;
   Type_Info return_type;
-  u32 entry_block;
+  LLVMValueRef llvm_function;
 } Bytecode_Function;
 
 GENERATE_DARRAY_HEADER(Bytecode_Function, Bytecode_Function_Array);
@@ -90,7 +104,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst);
 void print_bytecode_block(Bytecode_Block block);
 void print_bytecode_function(Bytecode_Function fn);
 void print_bytecode_compilation_unit(Compilation_Unit *unit);
-void generate_bytecode_compilation_unit(Compilation_Unit *unit, Scope *scope);
+void generate_bytecode_compilation_unit(Compilation_Unit *unit);
 
 
 #endif

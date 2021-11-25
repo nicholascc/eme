@@ -8,6 +8,7 @@
 #include "lexer.h"
 #include "errors.h"
 #include "symbol_table.h"
+#include "bytecode.h"
 
 
 
@@ -357,7 +358,6 @@ Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *identifie
   Ast_Node_Ptr_Array args = init_Ast_Node_Ptr_Array(2);
   save_state(r);
   Token first = peek_token(r);
-
   if(first.type != TCLOSE_PAREN) {
     revert_state(r);
     while(1) {
@@ -375,65 +375,56 @@ Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *identifie
 
   Ast_Function_Call *n = allocate_ast_node(NODE_FUNCTION_CALL, sizeof(Ast_Function_Call));
   n->n.loc = open_paren.loc;
-  assert(n->n.type == NODE_SYMBOL);
+  assert(identifier->type == NODE_SYMBOL);
   n->identifier = (Ast_Symbol *)identifier;
   n->arguments = args;
 
   return n;
 }
 
+typedef struct Symbol_Integer_Pair {
+  const char *str;
+  symbol sym;
+  u8 width;
+  bool is_signed;
+} Symbol_Integer_Pair;
+
+int SYMBOL_INTEGERS_COUNT = 10;
+Symbol_Integer_Pair symbol_integers[] =
+  {{"u8", NULL, 8, false},
+   {"u16", NULL, 16, false},
+   {"u32", NULL, 32, false},
+   {"u64", NULL, 64, false},
+   {"s8", NULL, 8, true},
+   {"s16", NULL, 16, true},
+   {"s32", NULL, 32, true},
+   {"s64", NULL, 64, true},
+   {"uint", NULL, 64, false},
+   {"int", NULL, 64, true}};
+
+
+void register_parser_symbols() {
+  for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++)
+    symbol_integers[i].sym = st_get_id_of_null_terminated((char *)symbol_integers[i].str);
+}
+
 Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
   Token t = peek_token(r);
   if(t.type != TSYMBOL) error_unexpected_token(t);
-  int length;
-  char *str = st_get_str_of(t.data.symbol, &length);
   Ast_Primitive_Type *n = allocate_ast_node(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
   n->n.loc = t.loc;
+
   bool is_signed;
   u8 width;
-  if(length == 4) {
-    if(strncmp("uint", str) == 0) {
-      is_signed = false;
-      width = 64;
+  bool should_error = true;
+  for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
+    if(t.data.symbol == symbol_integers[i].sym) {
+      n->type_info = INT_TYPE_INFO(symbol_integers[i].is_signed, symbol_integers[i].width);
+      should_error = false;
+      break;
     }
-    else parse_error("I expected a primitive type.", t.loc, true);
-
-  } else if(length == 3) {
-    if(strncmp("int", str, 3) == 0) {
-      is_signed = true;
-      width = 64;
-    } else if(strncmp("s16", str, 3) == 0) {
-      is_signed = true;
-      width = 16;
-    } else if(strncmp("s32", str, 3) == 0) {
-      is_signed = true;
-      width = 32;
-    } else if(strncmp("s64", str, 3) == 0) {
-      is_signed = true;
-      width = 64;
-    } else if(strncmp("u16", str, 3) == 0) {
-      is_signed = false;
-      width = 16;
-    } else if(strncmp("u32", str, 3) == 0) {
-      is_signed = false;
-      width = 32;
-    } else if(strncmp("u64", str, 3) == 0) {
-      is_signed = false;
-      width = 64;
-    } else parse_error("I expected a primitive type.", t.loc, true);
-
-  } else if(length == 2) {
-    if(strncmp("s8", str, 2) == 0) {
-      is_signed = true;
-      width = 8;
-    } else if(strncmp("u8", str, 2) == 0) {
-      is_signed = false;
-      width = 8;
-    }
-    else parse_error("I expected a primitive type.", t.loc, true);
-  } else parse_error("I expected a primitive type.", t.loc, true);
-
-  n->type_info = INT_TYPE_INFO(is_signed, width);
+  }
+  if(should_error) parse_error("I expected a primitive type.", t.loc, true);
 
   return n;
 }
@@ -548,6 +539,7 @@ Ast *parse_file(Token_Reader *r) {
       sig->bytecode_generation_seen = false;
       sig->poisoned = false;
       sig->node = node;
+      sig->scope = &result->scope;
       sig->data.body = body;
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, sig);
 
@@ -558,7 +550,9 @@ Ast *parse_file(Token_Reader *r) {
       body->bytecode_generation_seen = false;
       body->poisoned = false;
       body->node = node;
+      body->scope = &result->scope;
       body->data.signature = sig;
+      body->bytecode.function = malloc(sizeof(Bytecode_Function));
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
 
       declaration_unit = sig;
@@ -646,29 +640,35 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
 
   Ast_Node_Ptr_Array arguments = init_Ast_Node_Ptr_Array(2);
 
-  while(1) {
-    Token sym = peek_token(r);
-    if(sym.type != TSYMBOL) error_unexpected_token(sym);
-    Token colon = peek_token(r);
-    if(colon.type != TCOLON) error_unexpected_token(colon);
+  save_state(r);
+  Token first = peek_token(r);
+  if(first.type != TCLOSE_PAREN) {
+    revert_state(r);
+    while(1) {
+      Token sym = peek_token(r);
+      if(sym.type != TSYMBOL) error_unexpected_token(sym);
+      Token colon = peek_token(r);
+      if(colon.type != TCOLON) error_unexpected_token(colon);
 
-    Ast_Node *type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
-    Ast_Function_Argument *arg = allocate_ast_node(NODE_FUNCTION_ARGUMENT, sizeof(Ast_Function_Argument));
-    arg->n.loc = colon.loc;
-    arg->symbol = sym.data.symbol;
-    arg->type = type;
-    arg->type_info = UNKNOWN_TYPE_INFO;
-    Ast_Node_Ptr_Array_push(&arguments, arg);
+      Ast_Node *type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
+      Ast_Function_Argument *arg = allocate_ast_node(NODE_FUNCTION_ARGUMENT, sizeof(Ast_Function_Argument));
+      arg->n.loc = colon.loc;
+      arg->symbol = sym.data.symbol;
+      arg->type = type;
+      arg->type_info = UNKNOWN_TYPE_INFO;
+      Ast_Node_Ptr_Array_push(&arguments, arg);
 
-    Scope_Entry e;
-    e.symbol = sym.data.symbol;
-    e.declaration.node = arg;
-    Scope_Entry_Array_push(&n->scope.entries, e);
+      Scope_Entry e;
+      e.symbol = sym.data.symbol;
+      e.declaration.node = arg;
+      Scope_Entry_Array_push(&n->scope.entries, e);
 
-    Token next = peek_token(r);
-    if(next.type == TCLOSE_PAREN) break;
-    else if(next.type != TCOMMA) error_unexpected_token(next);
+      Token next = peek_token(r);
+      if(next.type == TCLOSE_PAREN) break;
+      else if(next.type != TCOMMA) error_unexpected_token(next);
+    }
   }
+  
   Token arrow = peek_token(r);
   if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
 

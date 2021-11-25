@@ -13,4 +13,7 @@ Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope);
 Ast_Node *parse_definition(Token_Reader *r, Scope *scope);
 Ast *parse_file(Token_Reader *r);
 
+// Call this before any parsing occurs; this caches the symbols corresponding to e.g. u8, int, etc.
+void register_parser_symbols();
+
 #endif /* end of include guard: PARSER_H */

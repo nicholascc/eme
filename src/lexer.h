@@ -6,6 +6,7 @@
 #include "c-utils/integer.h"
 #include "c-utils/darray.h"
 #include "errors.h"
+#include "symbol_table.h"
 
 typedef enum Token_Type {
   TEOL = 0,
@@ -73,7 +74,7 @@ typedef struct Token {
   Token_Type type;
 
   union {
-    u64 symbol;
+    symbol symbol;
     int literal_int;
     bool literal_bool;
     char *literal_string;

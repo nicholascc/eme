@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
 
 
   st_init();
+  register_parser_symbols();
   init_file_array();
 
   char *contents = add_file("./examples/test.eme");
@@ -62,15 +63,15 @@ int main(int argc, char *argv[]) {
     Compilation_Unit *unit = entry.declaration.unit;
     if(unit->type == UNIT_FUNCTION_SIGNATURE) {
       Compilation_Unit *body = unit->data.body;
-      infer_types_of_compilation_unit(body, &ast->scope);
-      generate_bytecode_compilation_unit(body, &ast->scope);
+      infer_types_of_compilation_unit(body);
+      generate_bytecode_compilation_unit(body);
       if(body->poisoned) {
         compilation_has_errors = true;
       } else {
         print_bytecode_compilation_unit(body);
         Bytecode_Function fn = *body->bytecode.function;
-        u64 *env = init_interpreted_function_environment(fn);
-        interpret_bytecode_function(fn, env);
+        //u64 *env = init_interpreted_function_environment(fn);
+        //interpret_bytecode_function(fn, env);
       }
     }
   }

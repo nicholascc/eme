@@ -34,12 +34,6 @@ s64 s64_abs(s64 x) {
 }
 
 bool can_implicitly_cast(Type_Info before, Type_Info after) {
-  printf("TESTING CAST, types ");
-  print_type_info(before);
-  printf(" -> ");
-  print_type_info(after);
-  printf("\n");
-
   if(after.type == TYPE_POISON) return true;
 
   if(before.type == TYPE_INT && after.type == TYPE_INT) {
@@ -91,7 +85,7 @@ Type_Info solidify_type(Type_Info x, Ast_Node node) {
 
 Type_Info type_info_of_type_expr(Ast_Node *type_node, bool *unit_poisoned) {
   if(type_node->type != NODE_PRIMITIVE_TYPE) {
-    type_inference_error("Internal compiler error: Compiler expected a primitive type.", type_node->loc, unit_poisoned);
+    type_inference_error("Internal compiler error: I expected a primitive type.", type_node->loc, unit_poisoned);
     exit(1);
   }
   Ast_Primitive_Type *n = (Ast_Primitive_Type *)type_node;
@@ -154,12 +148,14 @@ Type_Info infer_type_info_of_decl_unit(Compilation_Unit *unit, Scope *scope) {
 }
 
 // DO NOT HOLD THE RETURNED POINTER!
-Scope_Entry *get_entry_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node) {
+Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Ast_Node *node, bool *scope_is_ordered) {
   while(true) {
     for(int i = 0; i < scope->entries.length; i++) {
       Scope_Entry *e = &scope->entries.data[i];
-      if(e->symbol == symbol)
+      if(e->symbol == symbol) {
+        *scope_is_ordered = scope->is_ordered;
         return e;
+      }
     }
 
     if(scope->has_parent)
@@ -171,10 +167,11 @@ Scope_Entry *get_entry_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node
   exit(1);
 }
 
-Type_Info get_type_of_identifier_in_scope(u64 symbol, Scope *scope, Ast_Node *node, bool *unit_poisoned) {
-  Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, node);
+Type_Info get_type_of_identifier_in_scope(symbol symbol, Scope *scope, Ast_Node *node, bool *unit_poisoned) {
+  bool scope_is_ordered;
+  Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, node, &scope_is_ordered);
 
-  if(!scope->is_ordered)
+  if(!scope_is_ordered)
     return infer_type_info_of_decl_unit(e->declaration.unit, scope);
   else {
     Ast_Node *node = e->declaration.node;
@@ -328,6 +325,39 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, Ast_Function_Definiti
       return NOTHING_TYPE_INFO;
     }
 
+    case NODE_FUNCTION_CALL: {
+      Ast_Function_Call *n = node;
+      Scope_Entry *e;
+      {
+        Ast_Symbol *sym = n->identifier;
+        assert(sym->n.type == NODE_SYMBOL);
+        // Ignoring overriding functions and shadowing variables for now.
+        bool scope_is_ordered;
+        e = get_entry_of_identifier_in_scope(sym->symbol, scope, n, &scope_is_ordered);
+        assert(!scope_is_ordered);
+      }
+
+      Compilation_Unit *unit = e->declaration.unit;
+      assert(unit->type == UNIT_FUNCTION_SIGNATURE);
+      n->signature = unit;
+      infer_types_of_compilation_unit(unit);
+
+      Ast_Function_Definition *def = unit->node;
+      if(n->arguments.length != def->arguments.length) {
+        type_inference_error(NULL, node->loc, unit_poisoned);
+        printf("I expected %i arguments to this function, but got %i instead.\n", def->arguments.length,n->arguments.length);
+      } else {
+        for(int i = 0; i < n->arguments.length; i++) {
+          Type_Info defined = ((Ast_Function_Argument *)def->arguments.data[i])->type_info;
+          Type_Info passed = infer_type_of_expr(n->arguments.data[i], scope, fn_def, true, unit_poisoned);
+          if(!can_implicitly_cast(passed, defined))
+            error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+        }
+      }
+
+      return def->return_type_info;
+    }
+
     case NODE_NULL: {
       return NOTHING_TYPE_INFO;
     }
@@ -398,7 +428,7 @@ Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, S
   return NOTHING_TYPE_INFO; // placeholder
 }
 
-void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
+void infer_types_of_compilation_unit(Compilation_Unit *unit) {
   if(unit->type_inferred || unit->poisoned) return;
   if(unit->type_inference_seen) {
     print_error_message("I found a circular dependency at this node.", unit->node->loc);
@@ -408,7 +438,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
   unit->type_inference_seen = true;
   switch(unit->type) {
     case UNIT_FUNCTION_SIGNATURE: {
-      if(infer_type_info_of_function_signature(unit->node, scope, &unit->poisoned).type == TYPE_POISON) {
+      if(infer_type_info_of_function_signature(unit->node, unit->scope, &unit->poisoned).type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;
@@ -416,7 +446,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit, Scope *scope) {
     case UNIT_FUNCTION_BODY: {
       Compilation_Unit *sig = unit->data.signature;
       assert(sig->type == UNIT_FUNCTION_SIGNATURE);
-      infer_types_of_compilation_unit(sig, scope);
+      infer_types_of_compilation_unit(sig);
       if(sig->poisoned) {
         unit->poisoned = true;
       } else {

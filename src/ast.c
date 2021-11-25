@@ -34,12 +34,9 @@ Compilation_Unit *allocate_compilation_unit(Compilation_Unit unit) {
 }
 
 
-void print_symbol(u64 symbol) {
-  int length;
-  char *str = st_get_str_of(symbol, &length);
-  for(int i = 0; i < length; i++) {
-    printf("%c",str[i]);
-  }
+void print_symbol(symbol symbol) {
+  char *str = st_get_str_of(symbol);
+  printf("%s", str);
 }
 
 void print_ast(Ast ast) {

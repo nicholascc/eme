@@ -6,6 +6,7 @@
 #include "c-utils/integer.h"
 #include "c-utils/darray.h"
 #include "errors.h"
+#include "symbol_table.h"
 
 typedef enum Type_Info_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
@@ -101,6 +102,7 @@ typedef enum Compilation_Unit_Type {
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
+typedef struct Scope Scope;
 
 typedef struct Compilation_Unit {
   Compilation_Unit_Type type;
@@ -110,6 +112,7 @@ typedef struct Compilation_Unit {
   bool bytecode_generation_seen;
   bool poisoned;
   Ast_Node *node;
+  Scope *scope;
   union {
     Compilation_Unit *signature;
     Compilation_Unit *body;
@@ -122,17 +125,15 @@ typedef struct Compilation_Unit {
 GENERATE_DARRAY_HEADER(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 
 typedef struct Scope_Entry {
-  u64 symbol;
+  symbol symbol;
   u32 register_id;
-  union {
+  union { // Determined based on the parent Scope object's is_ordered_property
     Ast_Node *node;
     Compilation_Unit *unit;
   } declaration;
 } Scope_Entry;
 
 GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
-
-typedef struct Scope Scope;
 
 typedef struct Scope {
   bool is_ordered;
@@ -215,6 +216,7 @@ typedef struct Ast_If {
 typedef struct Ast_Function_Call {
   Ast_Node n;
   Ast_Node *identifier;
+  Compilation_Unit *signature;
   Ast_Node_Ptr_Array arguments;
 } Ast_Function_Call;
 
@@ -225,19 +227,19 @@ typedef struct Ast_Primitive_Type {
 
 typedef struct Ast_Symbol {
   Ast_Node n;
-  u64 symbol;
+  symbol symbol;
 } Ast_Symbol;
 
 typedef struct Ast_Typed_Decl {
   Ast_Node n;
-  u64 symbol;
+  symbol symbol;
   Ast_Node *type;
   Type_Info type_info;
 } Ast_Typed_Decl;
 
 typedef struct Ast_Typed_Decl_Set {
   Ast_Node n;
-  u64 symbol;
+  symbol symbol;
   Ast_Node *type;
   Ast_Node *value;
   Type_Info type_info;
@@ -245,7 +247,7 @@ typedef struct Ast_Typed_Decl_Set {
 
 typedef struct Ast_Untyped_Decl_Set {
   Ast_Node n;
-  u64 symbol;
+  symbol symbol;
   Ast_Node *value;
   Type_Info type_info;
 } Ast_Untyped_Decl_Set;
@@ -258,14 +260,14 @@ typedef struct Ast_Block {
 
 typedef struct Ast_Function_Argument {
   Ast_Node n;
-  u64 symbol;
+  symbol symbol;
   Ast_Node *type;
   Type_Info type_info;
 } Ast_Function_Argument;
 
 typedef struct Ast_Function_Definition {
   Ast_Node n;
-  u64 symbol;
+  symbol symbol;
   Ast_Node_Ptr_Array arguments;
   Ast_Node *return_type;
   Type_Info return_type_info;
@@ -282,7 +284,7 @@ Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size);
 Compilation_Unit *allocate_null_compilation_unit();
 Compilation_Unit *allocate_compilation_unit(Compilation_Unit unit);
 
-void print_symbol(u64 symbol);
+void print_symbol(symbol symbol);
 void print_ast(Ast ast);
 void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);

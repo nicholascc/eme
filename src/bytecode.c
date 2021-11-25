@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "c-utils/integer.h"
+#include "c-utils/alloca.h"
 
 #include "ast.h"
 #include "type_inference.h"
@@ -12,6 +13,14 @@ GENERATE_DARRAY_CODE(Bytecode_Instruction, Bytecode_Instruction_Array);
 GENERATE_DARRAY_CODE(Bytecode_Block, Bytecode_Block_Array);
 GENERATE_DARRAY_CODE(Type_Info, Type_Info_Array);
 GENERATE_DARRAY_CODE(Bytecode_Function, Bytecode_Function_Array);
+
+Scope_Entry * get_entry_of_identifier_ordered_scope(symbol symbol, Scope *scope, Ast_Node *node) {
+  Scope_Entry *e;
+  bool scope_is_ordered;
+  e = get_entry_of_identifier_in_scope(symbol, scope, node, &scope_is_ordered);
+  assert(scope_is_ordered);
+  return e;
+}
 
 void print_bytecode_instruction(Bytecode_Instruction inst) {
   switch(inst.type) {
@@ -29,6 +38,14 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
     }
     case BC_SET: {
       printf("set r%i <- r%i\n", inst.data.set.reg_a, inst.data.set.reg_b);
+      break;
+    }
+    case BC_CALL: {
+      printf("call ... -> %i\n", inst.data.call.reg);
+      break;
+    }
+    case BC_ARG: {
+      printf("arg %i\n", inst.data.arg.reg);
       break;
     }
     case BC_RETURN: {
@@ -96,7 +113,7 @@ void add_instruction(Bytecode_Block *block, Bytecode_Instruction inst) {
 }
 
 Bytecode_Block init_bytecode_block() {
-  return (Bytecode_Block) {false, init_Bytecode_Instruction_Array(2)};
+  return (Bytecode_Block) {init_Bytecode_Instruction_Array(2), false};
 }
 
 
@@ -142,13 +159,14 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           return inst.data.bin_op.reg_a;
         } // should combine these two cases above into single simplified code
         case OPSET_EQUALS: {
-          u64 symbol;
+          symbol symbol;
           {
             Ast_Symbol *sn = n->first;
             assert(sn->n.type == NODE_SYMBOL);
             symbol = sn->symbol;
           }
-          Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, node);
+          Scope_Entry *e = get_entry_of_identifier_ordered_scope(symbol, scope, node);
+
           u32 reg = e->register_id;
           Bytecode_Instruction inst;
           inst.type = BC_SET;
@@ -166,20 +184,21 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     }
     case NODE_SYMBOL: {
       Ast_Symbol *n = node;
-      return get_entry_of_identifier_in_scope(n->symbol, scope, node)->register_id;
+      Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
+      return e->register_id;
     }
     case NODE_BLOCK: {
       return add_block_to_block(node, fn, block);
     }
     case NODE_TYPED_DECL: {
       Ast_Typed_Decl *n = node;
-      Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node);
+      Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
       e->register_id = add_register(fn, n->type_info);
       return -1;
     }
     case NODE_UNTYPED_DECL_SET: {
       Ast_Untyped_Decl_Set *n = node;
-      Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node);
+      Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
       u32 reg = add_register(fn, n->type_info);
       e->register_id = reg;
       Bytecode_Instruction inst;
@@ -191,7 +210,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     }
     case NODE_TYPED_DECL_SET: {
       Ast_Typed_Decl_Set *n = node;
-      Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node);
+      Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
       u32 reg = fn->register_types.length;
       e->register_id = add_register(fn, n->type_info);
       Bytecode_Instruction inst;
@@ -260,11 +279,36 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       add_instruction(&fn->blocks.data[prev_block], cond);
       return n->result_is_used ? if_result_reg : -1;
     }
+    case NODE_FUNCTION_CALL: {
+      Ast_Function_Call *n = node;
+      infer_types_of_compilation_unit(n->signature->data.body);
+
+      u32 *arg_registers = alloca(n->arguments.length * sizeof(u32));
+      for(int i = 0; i < n->arguments.length; i++) {
+        arg_registers[i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
+      }
+
+      u32 result_reg = add_register(fn, ((Ast_Function_Definition *)n->signature->node)->return_type_info);
+      {
+        Bytecode_Instruction inst;
+        inst.type = BC_CALL;
+        inst.data.call.to = n->signature->data.body->bytecode.function;
+        inst.data.call.reg = result_reg;
+        add_instruction(&fn->blocks.data[*block], inst);
+      }
+
+      for(int i = 0; i < n->arguments.length; i++) {
+        Bytecode_Instruction inst;
+        inst.type = BC_ARG;
+        inst.data.arg.reg = arg_registers[i];
+        add_instruction(&fn->blocks.data[*block], inst);
+      }
+      return result_reg;
+    }
     case NODE_NULL: {
       return -1;
     }
     case NODE_UNARY_OP:
-    case NODE_FUNCTION_CALL:
     case NODE_FUNCTION_DEFINITION:
     case NODE_PRIMITIVE_TYPE:
     default: {
@@ -303,8 +347,7 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 }
 
 
-Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Scope *scope) {
-  Bytecode_Function *r = malloc(sizeof(Bytecode_Function));
+void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *defn, Scope *scope) {
   r->register_types = init_Type_Info_Array(4);
 
   r->arg_count = 0;
@@ -341,18 +384,17 @@ Bytecode_Function *generate_bytecode_function(Ast_Function_Definition *defn, Sco
     ret.data.ret.reg = reg;
     add_instruction(&r->blocks.data[generated.exit], ret);
   }
-  return r;
 }
 
-void generate_bytecode_compilation_unit(Compilation_Unit *unit, Scope *scope) {
+void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
   if(unit->bytecode_generated || unit->poisoned) return;
   assert(!unit->bytecode_generation_seen && "circular dependency");
 
-  infer_types_of_compilation_unit(unit, scope);
+  infer_types_of_compilation_unit(unit);
   if(unit->type == UNIT_FUNCTION_BODY) {
     assert(unit->node->type == NODE_FUNCTION_DEFINITION);
     Ast_Function_Definition *fn = unit->node;
-    unit->bytecode.function = generate_bytecode_function(fn, scope);
+    generate_bytecode_function(unit->bytecode.function, fn, unit->scope);
     unit->bytecode_generated = true;
   }
 }
