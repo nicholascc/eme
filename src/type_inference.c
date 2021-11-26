@@ -187,8 +187,8 @@ Type_Info get_type_of_identifier_in_scope(symbol symbol, Scope *scope, Ast_Node 
       Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
       assert(n->type_info.type != TYPE_UNKNOWN);
       return n->type_info;
-    } else if(node->type == NODE_FUNCTION_ARGUMENT) {
-      Ast_Function_Argument *n = (Ast_Function_Argument *)node;
+    } else if(node->type == NODE_FUNCTION_PARAMETER) {
+      Ast_Function_Parameter *n = (Ast_Function_Parameter *)node;
       assert(n->type_info.type != TYPE_UNKNOWN);
       return n->type_info;
     }
@@ -343,12 +343,12 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, Ast_Function_Definiti
       infer_types_of_compilation_unit(unit);
 
       Ast_Function_Definition *def = unit->node;
-      if(n->arguments.length != def->arguments.length) {
+      if(n->arguments.length != def->parameters.length) {
         type_inference_error(NULL, node->loc, unit_poisoned);
-        printf("I expected %i arguments to this function, but got %i instead.\n", def->arguments.length,n->arguments.length);
+        printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length,n->arguments.length);
       } else {
         for(int i = 0; i < n->arguments.length; i++) {
-          Type_Info defined = ((Ast_Function_Argument *)def->arguments.data[i])->type_info;
+          Type_Info defined = ((Ast_Function_Parameter *)def->parameters.data[i])->type_info;
           Type_Info passed = infer_type_of_expr(n->arguments.data[i], scope, fn_def, true, unit_poisoned);
           if(!can_implicitly_cast(passed, defined))
             error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
@@ -419,10 +419,10 @@ Type_Info infer_types_of_block(Ast_Node *node_block, Ast_Function_Definition *fn
 
 Type_Info infer_type_info_of_function_signature(Ast_Function_Definition *node, Scope *scope, bool *unit_poisoned) {
   node->return_type_info = type_info_of_type_expr(node->return_type, scope);
-  for(int i = 0; i < node->arguments.length; i++) {
-    Ast_Function_Argument *arg = node->arguments.data[i];
-    assert(arg->n.type == NODE_FUNCTION_ARGUMENT);
-    arg->type_info = type_info_of_type_expr(arg->type, scope);
+  for(int i = 0; i < node->parameters.length; i++) {
+    Ast_Function_Parameter *param = node->parameters.data[i];
+    assert(param->n.type == NODE_FUNCTION_PARAMETER);
+    param->type_info = type_info_of_type_expr(param->type, scope);
   }
 
   return NOTHING_TYPE_INFO; // placeholder

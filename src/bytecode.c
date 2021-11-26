@@ -74,7 +74,7 @@ void print_bytecode_block(Bytecode_Block block) {
 }
 
 void print_bytecode_function(Bytecode_Function fn) {
-  printf("function :: (%i) -> ", fn.arg_count);
+  printf("function :: (%i) -> ", fn.param_count);
   print_type_info(fn.return_type);
   printf(" {\n");
   printf("  .registers :: {\n");
@@ -350,16 +350,16 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *defn, Scope *scope) {
   r->register_types = init_Type_Info_Array(4);
 
-  r->arg_count = 0;
+  r->param_count = 0;
   for(int i = 0; i < defn->scope.entries.length; i++) {
     Scope_Entry *e = &defn->scope.entries.data[i];
-    if(e->declaration.node->type == NODE_FUNCTION_ARGUMENT) {
-      Ast_Function_Argument *arg = e->declaration.node;
-      e->register_id = add_register(r, arg->type_info);
-      r->arg_count++;
+    if(e->declaration.node->type == NODE_FUNCTION_PARAMETER) {
+      Ast_Function_Parameter *param = e->declaration.node;
+      e->register_id = add_register(r, param->type_info);
+      r->param_count++;
     }
   }
-  assert(r->arg_count == defn->arguments.length);
+  assert(r->param_count == defn->parameters.length);
 
   r->blocks = init_Bytecode_Block_Array(2);
   assert(defn->body->type == NODE_BLOCK);

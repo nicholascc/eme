@@ -638,7 +638,7 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
   n->scope.parent = scope;
   n->scope.entries = init_Scope_Entry_Array(2);
 
-  Ast_Node_Ptr_Array arguments = init_Ast_Node_Ptr_Array(2);
+  Ast_Node_Ptr_Array parameters = init_Ast_Node_Ptr_Array(2);
 
   save_state(r);
   Token first = peek_token(r);
@@ -651,16 +651,16 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
       if(colon.type != TCOLON) error_unexpected_token(colon);
 
       Ast_Node *type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
-      Ast_Function_Argument *arg = allocate_ast_node(NODE_FUNCTION_ARGUMENT, sizeof(Ast_Function_Argument));
-      arg->n.loc = colon.loc;
-      arg->symbol = sym.data.symbol;
-      arg->type = type;
-      arg->type_info = UNKNOWN_TYPE_INFO;
-      Ast_Node_Ptr_Array_push(&arguments, arg);
+      Ast_Function_Parameter *param = allocate_ast_node(NODE_FUNCTION_PARAMETER, sizeof(Ast_Function_Parameter));
+      param->n.loc = colon.loc;
+      param->symbol = sym.data.symbol;
+      param->type = type;
+      param->type_info = UNKNOWN_TYPE_INFO;
+      Ast_Node_Ptr_Array_push(&parameters, param);
 
       Scope_Entry e;
       e.symbol = sym.data.symbol;
-      e.declaration.node = arg;
+      e.declaration.node = param;
       Scope_Entry_Array_push(&n->scope.entries, e);
 
       Token next = peek_token(r);
@@ -677,7 +677,7 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
 
 
   n->symbol = identifier.data.symbol;
-  n->arguments = arguments;
+  n->parameters = parameters;
   n->return_type = return_type;
   n->return_type_info = UNKNOWN_TYPE_INFO;
   n->body = body;

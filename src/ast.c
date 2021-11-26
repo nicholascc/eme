@@ -181,8 +181,8 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
-    case NODE_FUNCTION_ARGUMENT: {
-      Ast_Function_Argument *n = node;
+    case NODE_FUNCTION_PARAMETER: {
+      Ast_Function_Parameter *n = node;
       print_symbol(n->symbol);
       printf(": ");
       print_ast_node(n->type);
@@ -193,9 +193,9 @@ void print_ast_node(Ast_Node *node) {
       Ast_Function_Definition *n = node;
       print_symbol(n->symbol);
       printf(" :: (");
-      for(int i = 0; i < n->arguments.length; i++) {
+      for(int i = 0; i < n->parameters.length; i++) {
         if(i != 0) printf(", ");
-        print_ast_node(n->arguments.data[i]);
+        print_ast_node(n->parameters.data[i]);
       }
       printf(") -> ");
       print_ast_node(n->return_type);

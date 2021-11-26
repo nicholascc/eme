@@ -44,14 +44,14 @@ inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, T
 void generate_llvm_function_signature(LLVMModuleRef mod, Compilation_Unit unit) {
   assert(unit.type == UNIT_FUNCTION_BODY);
   Bytecode_Function *fn = unit.bytecode.function;
-  LLVMValueRef *arg_types = malloc(fn->arg_count * sizeof(LLVMTypeRef));
-  for(int i = 0; i < fn->arg_count; i++) {
+  LLVMValueRef *arg_types = malloc(fn->param_count * sizeof(LLVMTypeRef));
+  for(int i = 0; i < fn->param_count; i++) {
     arg_types[i] = llvm_type_of(fn->register_types.data[i]);
   }
 
   char *name = st_get_str_of(((Ast_Function_Definition *)unit.node)->symbol);
 
-  LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(fn->return_type), arg_types, fn->arg_count, false));
+  LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(fn->return_type), arg_types, fn->param_count, false));
   LLVMSetFunctionCallConv(llf, LLVMCCallConv);
 
   fn->llvm_function =  llf;
@@ -76,7 +76,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
     for(int i = 0; i < fn.register_types.length; i++) {
       LLVMTypeRef type = llvm_type_of(fn.register_types.data[i]);
       r[i] = LLVMBuildAlloca(builder, type, "");
-      if(i < fn.arg_count) {
+      if(i < fn.param_count) {
         LLVMValueRef arg = LLVMGetParam(llf, i);
         LLVMBuildStore(builder, arg, r[i]);
       }
@@ -159,8 +159,8 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           Bytecode_Function to_call = *inst.data.call.to;
           u32 result_reg = inst.data.call.reg;
           LLVMValueRef llto_call = to_call.llvm_function;
-          LLVMValueRef *args = malloc(to_call.arg_count *sizeof(LLVMValueRef));
-          for(int k = 0; k < to_call.arg_count; k++) {
+          LLVMValueRef *args = malloc(to_call.param_count *sizeof(LLVMValueRef));
+          for(int k = 0; k < to_call.param_count; k++) {
             j++;
             inst = block.instructions.data[j];
             assert(inst.type == BC_ARG);
@@ -168,7 +168,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
             LLVMValueRef loaded = LLVMBuildLoad(builder, r[reg], "");
             args[k] = generate_llvm_cast(builder, loaded, fn.register_types.data[reg], to_call.register_types.data[k]);
           }
-          LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, to_call.arg_count, "");
+          LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, to_call.param_count, "");
           LLVMBuildStore(builder, a, r[result_reg]);
           break;
         }
