@@ -107,10 +107,12 @@ typedef struct Scope Scope;
 typedef struct Compilation_Unit {
   Compilation_Unit_Type type;
   bool type_inferred;
-  bool type_inference_seen;
+  bool type_inference_seen; // used to detect circular dependencies
   bool bytecode_generated;
-  bool bytecode_generation_seen;
+  bool bytecode_generating; // used to not fall into an infinite recursion while
+                            //generating bytecode for recursive functions.
   bool poisoned;
+  
   Ast_Node *node;
   Scope *scope;
   union {

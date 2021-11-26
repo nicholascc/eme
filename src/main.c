@@ -70,8 +70,8 @@ int main(int argc, char *argv[]) {
       } else {
         print_bytecode_compilation_unit(body);
         Bytecode_Function fn = *body->bytecode.function;
-        //u64 *env = init_interpreted_function_environment(fn);
-        //interpret_bytecode_function(fn, env);
+        u64 *env = init_interpreted_function_environment(fn);
+        printf("RETURNED: %llu\n", interpret_bytecode_function(fn, env));
       }
     }
   }

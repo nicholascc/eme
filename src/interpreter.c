@@ -7,7 +7,7 @@ u64 *init_interpreted_function_environment(Bytecode_Function fn) {
   return malloc(sizeof(u64) * fn.register_types.length);
 }
 
-void interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
+u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
   Bytecode_Block block = fn.blocks.data[fn.entry_block];
   int inst_i = 0;
   while(true) {
@@ -64,9 +64,29 @@ void interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         r[inst.data.set_literal.reg_a] = inst.data.set_literal.lit_b;
         break;
       }
-      case BC_RETURN: {
-        printf("RETURNED: %lli\n", r[inst.data.ret.reg]);
+      case BC_CALL: {
+        Bytecode_Function to_call = *inst.data.call.to;
+        u32 result_reg = inst.data.call.reg;
+        u64 *env = init_interpreted_function_environment(to_call);
+
+        for(int k = 0; k < to_call.param_count; k++) {
+          inst_i++;
+          inst = block.instructions.data[inst_i];
+          assert(inst.type == BC_ARG);
+          env[k] = r[inst.data.arg.reg];
+        }
+        r[result_reg] = interpret_bytecode_function(to_call, env);
         break;
+      }
+      case BC_ARG: {
+        printf("Internal compiler error: Encountered an arg bytecode instruction not following a call instruction.\n");
+        print_bytecode_instruction(inst);
+        exit(1);
+      }
+      case BC_RETURN: {
+        u64 result = r[inst.data.ret.reg];
+        free(r);
+        return result;
       }
       case BC_BRANCH: {
         block = fn.blocks.data[inst.data.branch.block];
@@ -93,6 +113,4 @@ void interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
       break;
     }
   }
-
-  free(r);
 }

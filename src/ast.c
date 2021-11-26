@@ -232,7 +232,7 @@ void print_compilation_unit(Compilation_Unit *unit) {
 
   printf("bytecode generation: ");
   if(unit->bytecode_generated) printf("done\n");
-  else if(unit->bytecode_generation_seen) printf("seen\n");
+  else if(unit->bytecode_generating) printf("in progress\n");
   else printf("not yet\n");
 
   switch(unit->type) {

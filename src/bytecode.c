@@ -41,11 +41,11 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       break;
     }
     case BC_CALL: {
-      printf("call ... -> %i\n", inst.data.call.reg);
+      printf("call ... -> r%i\n", inst.data.call.reg);
       break;
     }
     case BC_ARG: {
-      printf("arg %i\n", inst.data.arg.reg);
+      printf("  arg r%i\n", inst.data.arg.reg);
       break;
     }
     case BC_RETURN: {
@@ -282,6 +282,9 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_FUNCTION_CALL: {
       Ast_Function_Call *n = node;
       infer_types_of_compilation_unit(n->signature->data.body);
+      generate_bytecode_compilation_unit(n->signature->data.body);
+      if(n->signature->data.body->poisoned)
+        fn->parent->poisoned = true;
 
       u32 *arg_registers = alloca(n->arguments.length * sizeof(u32));
       for(int i = 0; i < n->arguments.length; i++) {
@@ -387,14 +390,15 @@ void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *d
 }
 
 void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
-  if(unit->bytecode_generated || unit->poisoned) return;
-  assert(!unit->bytecode_generation_seen && "circular dependency");
+  if(unit->bytecode_generated || unit->bytecode_generating || unit->poisoned) return;
 
   infer_types_of_compilation_unit(unit);
   if(unit->type == UNIT_FUNCTION_BODY) {
     assert(unit->node->type == NODE_FUNCTION_DEFINITION);
+    unit->bytecode_generating = true;
     Ast_Function_Definition *fn = unit->node;
     generate_bytecode_function(unit->bytecode.function, fn, unit->scope);
+    unit->bytecode_generating = false;
     unit->bytecode_generated = true;
   }
 }

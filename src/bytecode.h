@@ -104,7 +104,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst);
 void print_bytecode_block(Bytecode_Block block);
 void print_bytecode_function(Bytecode_Function fn);
 void print_bytecode_compilation_unit(Compilation_Unit *unit);
-void generate_bytecode_compilation_unit(Compilation_Unit *unit);
+void generate_bytecode_compilation_unit(Compilation_Unit *unit); // can poison the compilation unit, e.g. if the body of a function it refers to is poisoned.
 
 
 #endif

@@ -306,7 +306,7 @@ Type_Info infer_type_of_expr(Ast_Node *node, Scope *scope, Ast_Function_Definiti
       Ast_If *n = node;
       n->result_is_used = using_result;
       Type_Info cond = infer_type_of_expr(n->cond, scope, fn_def, true, unit_poisoned);
-      if(cond.type != TYPE_BOOL) type_inference_error("The conditional of an if statement must be a boolean value.", n->cond->loc, unit_poisoned);
+      if(cond.type != TYPE_BOOL && cond.type != TYPE_POISON) type_inference_error("The conditional of an if statement must be a boolean value.", n->cond->loc, unit_poisoned);
       Type_Info first = infer_type_of_expr(n->first, scope, fn_def, using_result, unit_poisoned);
       Type_Info second = infer_type_of_expr(n->second, scope, fn_def, using_result, unit_poisoned);
       if(using_result) {

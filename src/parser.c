@@ -536,7 +536,7 @@ Ast *parse_file(Token_Reader *r) {
       sig->type_inferred = false;
       sig->type_inference_seen = false;
       sig->bytecode_generated = false;
-      sig->bytecode_generation_seen = false;
+      sig->bytecode_generating = false;
       sig->poisoned = false;
       sig->node = node;
       sig->scope = &result->scope;
@@ -547,12 +547,13 @@ Ast *parse_file(Token_Reader *r) {
       body->type_inferred = false;
       body->type_inference_seen = false;
       body->bytecode_generated = false;
-      body->bytecode_generation_seen = false;
+      body->bytecode_generating = false;
       body->poisoned = false;
       body->node = node;
       body->scope = &result->scope;
       body->data.signature = sig;
       body->bytecode.function = malloc(sizeof(Bytecode_Function));
+      body->bytecode.function->parent = body;
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
 
       declaration_unit = sig;

@@ -40,7 +40,7 @@ inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, T
 }
 
 
-// counterintuitively, the compilation unit supplied here must be a function body.
+// the compilation unit supplied here must be a function body.
 void generate_llvm_function_signature(LLVMModuleRef mod, Compilation_Unit unit) {
   assert(unit.type == UNIT_FUNCTION_BODY);
   Bytecode_Function *fn = unit.bytecode.function;
