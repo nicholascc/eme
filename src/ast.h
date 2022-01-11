@@ -8,7 +8,7 @@
 #include "errors.h"
 #include "symbol_table.h"
 
-typedef enum Type_Info_Type {
+typedef enum Type_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
   TYPE_NOTHING,
   TYPE_POISON, // used to indicate a type that is unknown due to a compiler
@@ -21,13 +21,10 @@ typedef enum Type_Info_Type {
 
   TYPE_STRUCT,
   TYPE_ARRAY
-} Type_Info_Type;
-
-typedef struct Type_Info Type_Info;
+} Type_Type;
 
 typedef struct Type_Info {
-  Type_Info_Type type;
-  int reference_count;
+  Type_Type type;
   union {
     struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_UNKNOWN, 0, {0}}
     s64 unknown_int;
@@ -36,17 +33,31 @@ typedef struct Type_Info {
       u8 width; // including sign bit
     } integer;
     // let's not do structs yet.
-    struct {
-      Type_Info *element_type;
-    } array;
   } data;
 } Type_Info;
 
-Type_Info UNKNOWN_TYPE_INFO;
-Type_Info NOTHING_TYPE_INFO;
-Type_Info POISON_TYPE_INFO;
-Type_Info BOOL_TYPE_INFO;
-#define INT_TYPE_INFO(is_signed,width) ((Type_Info){TYPE_INT,0,{.integer={is_signed, width}}})
+// Type_Infos are uniquely stored in memory, so you can just compare .info pointers to tell if two Types are equal.
+typedef struct Type {
+  int reference_count;
+  Type_Info *info;
+} Type;
+
+Type UNKNOWN_TYPE;
+Type NOTHING_TYPE;
+Type UNKNOWN_INT_TYPE;
+Type POISON_TYPE;
+Type BOOL_TYPE;
+Type INT_TYPE;
+Type UINT_TYPE;
+// ordered unsigned first, least to greatest width (8-64).
+Type INTEGER_TYPES[2][4];
+
+void init_primitive_types(); // initializes the above types. MUST BE CALLED UPON STARTUP!
+bool type_equals(Type a, Type b);
+Type allocate_unknown_int_type(int value);
+Type integer_type_with(bool is_signed, u8 width);
+
+void print_type(Type t);
 
 typedef enum Ast_Node_Type {
   NODE_NULL,
@@ -65,6 +76,7 @@ typedef enum Ast_Node_Type {
   NODE_TYPED_DECL_SET,
   NODE_FUNCTION_PARAMETER,
   NODE_FUNCTION_DEFINITION,
+  NODE_STRUCT_DEFINITION,
   NODE_RETURN
 } Ast_Node_Type;
 
@@ -98,7 +110,9 @@ typedef enum Compilation_Unit_Type {
   // type-checked separately (since for example the body of a recursive
   // function may reference it's own signature).
   UNIT_FUNCTION_SIGNATURE,
-  UNIT_FUNCTION_BODY
+  UNIT_FUNCTION_BODY,
+  UNIT_STRUCT_BODY,
+  UNIT_STRUCT_MEMBER
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
@@ -112,7 +126,7 @@ typedef struct Compilation_Unit {
   bool bytecode_generating; // used to not fall into an infinite recursion while
                             //generating bytecode for recursive functions.
   bool poisoned;
-  
+
   Ast_Node *node;
   Scope *scope;
   union {
@@ -155,7 +169,7 @@ typedef struct Ast {
 
 typedef struct Ast_Literal {
   Ast_Node n;
-  Type_Info type;
+  Type type;
   s64 value;
 } Ast_Literal;
 
@@ -186,7 +200,7 @@ typedef struct Ast_Binary_Op {
   Ast_Binary_Op_Type operator;
   Ast_Node *first;
   Ast_Node *second;
-  Type_Info convert_to;
+  Type convert_to;
 } Ast_Binary_Op;
 
 typedef enum Ast_Unary_Op_Type {
@@ -203,13 +217,13 @@ typedef struct Ast_Unary_Op {
   Ast_Node n;
   Ast_Unary_Op_Type operator;
   Ast_Node *operand;
-  Type_Info type;
+  Type type;
 } Ast_Unary_Op;
 
 typedef struct Ast_If {
   Ast_Node n;
   bool result_is_used;
-  Type_Info result_type_info; // only set if result_is_used is true
+  Type result_type; // only set if result_is_used is true
   Ast_Node *cond;
   Ast_Node *first;
   Ast_Node *second;
@@ -224,7 +238,7 @@ typedef struct Ast_Function_Call {
 
 typedef struct Ast_Primitive_Type {
   Ast_Node n;
-  Type_Info type_info;
+  Type type;
 } Ast_Primitive_Type;
 
 typedef struct Ast_Symbol {
@@ -235,23 +249,23 @@ typedef struct Ast_Symbol {
 typedef struct Ast_Typed_Decl {
   Ast_Node n;
   symbol symbol;
-  Ast_Node *type;
-  Type_Info type_info;
+  Ast_Node *type_node;
+  Type type;
 } Ast_Typed_Decl;
 
 typedef struct Ast_Typed_Decl_Set {
   Ast_Node n;
   symbol symbol;
-  Ast_Node *type;
+  Ast_Node *type_node;
   Ast_Node *value;
-  Type_Info type_info;
+  Type type;
 } Ast_Typed_Decl_Set;
 
 typedef struct Ast_Untyped_Decl_Set {
   Ast_Node n;
   symbol symbol;
   Ast_Node *value;
-  Type_Info type_info;
+  Type type;
 } Ast_Untyped_Decl_Set;
 
 typedef struct Ast_Block {
@@ -263,19 +277,27 @@ typedef struct Ast_Block {
 typedef struct Ast_Function_Parameter {
   Ast_Node n;
   symbol symbol;
-  Ast_Node *type;
-  Type_Info type_info;
+  Ast_Node *type_node;
+  Type type;
 } Ast_Function_Parameter;
 
 typedef struct Ast_Function_Definition {
   Ast_Node n;
   symbol symbol;
   Ast_Node_Ptr_Array parameters;
-  Ast_Node *return_type;
-  Type_Info return_type_info;
+  Ast_Node *return_type_node;
+  Type return_type;
   Scope scope; // the scope entries for this function's arguments must be placed first and in order in this scope.
   Ast_Node *body;
 } Ast_Function_Definition;
+
+typedef struct Ast_Struct_Definition {
+  Ast_Node n;
+  symbol symbol;
+  Type type;
+  Scope scope;
+  Ast_Node_Ptr_Array members;
+} Ast_Struct_Definition;
 
 typedef struct Ast_Return {
   Ast_Node n;
@@ -291,7 +313,6 @@ void print_ast(Ast ast);
 void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node *node);
-void print_type_info(Type_Info t);
 void print_compilation_unit(Compilation_Unit *unit);
 
 #endif /* end of include guard: AST_H */

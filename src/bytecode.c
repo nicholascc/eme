@@ -11,7 +11,7 @@
 
 GENERATE_DARRAY_CODE(Bytecode_Instruction, Bytecode_Instruction_Array);
 GENERATE_DARRAY_CODE(Bytecode_Block, Bytecode_Block_Array);
-GENERATE_DARRAY_CODE(Type_Info, Type_Info_Array);
+GENERATE_DARRAY_CODE(Type, Type_Array);
 GENERATE_DARRAY_CODE(Bytecode_Function, Bytecode_Function_Array);
 
 Scope_Entry * get_entry_of_identifier_ordered_scope(symbol symbol, Scope *scope, Ast_Node *node) {
@@ -75,12 +75,12 @@ void print_bytecode_block(Bytecode_Block block) {
 
 void print_bytecode_function(Bytecode_Function fn) {
   printf("function :: (%i) -> ", fn.param_count);
-  print_type_info(fn.return_type);
+  print_type(fn.return_type);
   printf(" {\n");
   printf("  .registers :: {\n");
   for(int i = 0; i < fn.register_types.length; i++) {
     printf("    %i: ", i);
-    print_type_info(fn.register_types.data[i]);
+    print_type(fn.register_types.data[i]);
     printf("\n");
   }
   printf("  }\n");
@@ -100,8 +100,8 @@ void print_bytecode_compilation_unit(Compilation_Unit *unit) {
   else printf("<bytecode not generated yet>\n");
 }
 
-u32 add_register(Bytecode_Function *fn, Type_Info type) {
-  Type_Info_Array_push(&fn->register_types, type);
+u32 add_register(Bytecode_Function *fn, Type type) {
+  Type_Array_push(&fn->register_types, type);
   return fn->register_types.length-1;
 }
 
@@ -154,7 +154,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           inst.type = BC_LESS_THAN;
           inst.data.bin_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
           inst.data.bin_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
-          inst.data.bin_op.reg_a = add_register(fn, BOOL_TYPE_INFO);
+          inst.data.bin_op.reg_a = add_register(fn, BOOL_TYPE);
           add_instruction(&fn->blocks.data[*block], inst);
           return inst.data.bin_op.reg_a;
         } // should combine these two cases above into single simplified code
@@ -193,13 +193,13 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_TYPED_DECL: {
       Ast_Typed_Decl *n = node;
       Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
-      e->register_id = add_register(fn, n->type_info);
+      e->register_id = add_register(fn, n->type);
       return -1;
     }
     case NODE_UNTYPED_DECL_SET: {
       Ast_Untyped_Decl_Set *n = node;
       Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
-      u32 reg = add_register(fn, n->type_info);
+      u32 reg = add_register(fn, n->type);
       e->register_id = reg;
       Bytecode_Instruction inst;
       inst.type = BC_SET;
@@ -212,7 +212,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Ast_Typed_Decl_Set *n = node;
       Scope_Entry *e = get_entry_of_identifier_ordered_scope(n->symbol, scope, node);
       u32 reg = fn->register_types.length;
-      e->register_id = add_register(fn, n->type_info);
+      e->register_id = add_register(fn, n->type);
       Bytecode_Instruction inst;
       inst.type = BC_SET;
       inst.data.set.reg_a = reg;
@@ -239,7 +239,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
 
       u32 if_result_reg;
       if(n->result_is_used) {
-        if_result_reg = add_register(fn, n->result_type_info);
+        if_result_reg = add_register(fn, n->result_type);
       }
 
       Bytecode_Ast_Block block_true = generate_bytecode_block(n->first, fn, scope);
@@ -283,15 +283,13 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Ast_Function_Call *n = node;
       infer_types_of_compilation_unit(n->signature->data.body);
       generate_bytecode_compilation_unit(n->signature->data.body);
-      if(n->signature->data.body->poisoned)
-        fn->parent->poisoned = true;
 
       u32 *arg_registers = alloca(n->arguments.length * sizeof(u32));
       for(int i = 0; i < n->arguments.length; i++) {
         arg_registers[i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
       }
 
-      u32 result_reg = add_register(fn, ((Ast_Function_Definition *)n->signature->node)->return_type_info);
+      u32 result_reg = add_register(fn, ((Ast_Function_Definition *)n->signature->node)->return_type);
       {
         Bytecode_Instruction inst;
         inst.type = BC_CALL;
@@ -351,14 +349,14 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 
 
 void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *defn, Scope *scope) {
-  r->register_types = init_Type_Info_Array(4);
+  r->register_types = init_Type_Array(4);
 
   r->param_count = 0;
   for(int i = 0; i < defn->scope.entries.length; i++) {
     Scope_Entry *e = &defn->scope.entries.data[i];
     if(e->declaration.node->type == NODE_FUNCTION_PARAMETER) {
       Ast_Function_Parameter *param = e->declaration.node;
-      e->register_id = add_register(r, param->type_info);
+      e->register_id = add_register(r, param->type);
       r->param_count++;
     }
   }
@@ -370,7 +368,7 @@ void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *d
   u32 entry_result_reg;
   Bytecode_Ast_Block generated = generate_bytecode_block(defn->body, r, scope);
   r->entry_block = generated.entry;
-  r->return_type = defn->return_type_info;
+  r->return_type = defn->return_type;
 
 
   // add a default return if the block isn't concluded, since every block must be concluded

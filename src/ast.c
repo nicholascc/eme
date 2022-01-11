@@ -9,12 +9,82 @@ GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
 GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 
-Type_Info UNKNOWN_TYPE_INFO = {TYPE_UNKNOWN, 0, {0}};
-Type_Info NOTHING_TYPE_INFO = {TYPE_NOTHING, 0, {0}};
-Type_Info POISON_TYPE_INFO  = {TYPE_POISON,  0, {0}};
-Type_Info BOOL_TYPE_INFO = {TYPE_BOOL, 0, {0}};
-
 Ast_Node NULL_AST_NODE = {NODE_NULL, {-1,-1,-1}};
+
+
+void init_primitive_types() {
+  Type_Info *infos = malloc(32*sizeof(Type_Info)); // just allocate more space than necessary
+  int n = 0;
+  infos[n] = (Type_Info) {TYPE_UNKNOWN, {0}};
+  UNKNOWN_TYPE = (Type) {0, &infos[n++]};
+  infos[n] = (Type_Info) {TYPE_NOTHING, {0}};
+  NOTHING_TYPE = (Type) {0, &infos[n++]};
+  infos[n] = (Type_Info) {TYPE_POISON, {0}};
+  POISON_TYPE = (Type) {0, &infos[n++]};
+  infos[n] = (Type_Info) {TYPE_BOOL, {0}};
+  BOOL_TYPE = (Type) {0, &infos[n++]};
+  infos[n] = (Type_Info) {TYPE_BOOL, {0}};
+  BOOL_TYPE = (Type) {0, &infos[n++]};
+
+  for(int i = 0; i < 2; i++) {
+    bool is_signed = i;
+    for(int j = 0; j < 4; j++) {
+      u8 width;
+      switch(j) {
+        case 0: width = 8; break;
+        case 1: width = 16; break;
+        case 2: width = 32; break;
+        case 3: width = 64; break;
+        default: assert(false);
+      }
+      infos[n] = (Type_Info) {TYPE_INT, {.integer={is_signed,width}}};
+      INTEGER_TYPES[i][j] = (Type) {0, &infos[n++]};
+    }
+  }
+  INT_TYPE = INTEGER_TYPES[1][3];
+  UINT_TYPE = INTEGER_TYPES[0][3];
+}
+
+Type integer_type_with(bool is_signed, u8 width) {
+  switch(width) {
+    case 8: return INTEGER_TYPES[is_signed][0];
+    case 16: return INTEGER_TYPES[is_signed][1];
+    case 32: return INTEGER_TYPES[is_signed][2];
+    case 64: return INTEGER_TYPES[is_signed][3];
+    default: assert(false);
+  }
+}
+
+Type allocate_unknown_int_type(int value) {
+  Type_Info *info = malloc(sizeof(Type_Info));
+  info->type = TYPE_UNKNOWN_INT;
+  info->data.unknown_int = value;
+  return (Type){0, info};
+}
+
+bool type_equals(Type a, Type b) {
+  return a.info == b.info && a.reference_count == b.reference_count;
+}
+
+void print_type_info(Type_Info t) {
+  switch(t.type) {
+    case TYPE_UNKNOWN: printf("unknown"); break;
+    case TYPE_NOTHING: printf("nothing"); break;
+    case TYPE_INT: {
+      if(t.data.integer.is_signed) printf("s%i", t.data.integer.width);
+      else printf("u%i", t.data.integer.width);
+      break;
+    }
+    case TYPE_BOOL: printf("bool"); break;
+    case TYPE_UNKNOWN_INT: printf("literal integer"); break;
+    default:
+      printf("(unprintable type)"); break;
+  }
+}
+
+void print_type(Type t) {
+  print_type_info(*t.info);
+}
 
 
 Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size) {
@@ -152,7 +222,7 @@ void print_ast_node(Ast_Node *node) {
       Ast_Typed_Decl_Set *n = node;
       print_symbol(n->symbol);
       printf(": ");
-      print_ast_node(n->type);
+      print_ast_node(n->type_node);
       printf(" = ");
       print_ast_node(n->value);
       break;
@@ -170,7 +240,7 @@ void print_ast_node(Ast_Node *node) {
       Ast_Typed_Decl *n = node;
       print_symbol(n->symbol);
       printf(": ");
-      print_ast_node(n->type);
+      print_ast_node(n->type_node);
       break;
     }
 
@@ -185,22 +255,31 @@ void print_ast_node(Ast_Node *node) {
       Ast_Function_Parameter *n = node;
       print_symbol(n->symbol);
       printf(": ");
-      print_ast_node(n->type);
+      print_ast_node(n->type_node);
       break;
     }
 
     case NODE_FUNCTION_DEFINITION: {
       Ast_Function_Definition *n = node;
       print_symbol(n->symbol);
-      printf(" :: (");
+      printf(" :: fn (");
       for(int i = 0; i < n->parameters.length; i++) {
         if(i != 0) printf(", ");
         print_ast_node(n->parameters.data[i]);
       }
       printf(") -> ");
-      print_ast_node(n->return_type);
+      print_ast_node(n->return_type_node);
       printf(" ");
       print_ast_node(n->body);
+      break;
+    }
+
+    case NODE_STRUCT_DEFINITION: {
+      Ast_Struct_Definition *n = node;
+      print_symbol(n->symbol);
+      printf(" :: struct {\n");
+      print_ast_statement_array(n->members);
+      printf("}");
       break;
     }
 
@@ -214,7 +293,7 @@ void print_ast_node(Ast_Node *node) {
 
     case NODE_PRIMITIVE_TYPE: {
       Ast_Primitive_Type *n = node;
-      print_type_info(n->type_info);
+      print_type(n->type);
       break;
     }
 
@@ -246,24 +325,20 @@ void print_compilation_unit(Compilation_Unit *unit) {
       printf("Function signature.\n");
       break;
     }
+    case UNIT_STRUCT_BODY: {
+      printf("Struct body:\n");
+      print_ast_node(unit->node);
+      printf("\n");
+      break;
+    }
+    case UNIT_STRUCT_MEMBER: {
+      printf("Struct member: ");
+      print_ast_node(unit->node);
+      printf("\n");
+      break;
+    }
     default: {
       printf("Unknown type of compilation unit.\n");
     }
-  }
-}
-
-void print_type_info(Type_Info t) {
-  switch(t.type) {
-    case TYPE_UNKNOWN: printf("unknown"); break;
-    case TYPE_NOTHING: printf("nothing"); break;
-    case TYPE_INT: {
-      if(t.data.integer.is_signed) printf("s%i", t.data.integer.width);
-      else printf("u%i", t.data.integer.width);
-      break;
-    }
-    case TYPE_BOOL: printf("bool"); break;
-    case TYPE_UNKNOWN_INT: printf("literal integer"); break;
-    default:
-      printf("(unprintable type)"); break;
   }
 }

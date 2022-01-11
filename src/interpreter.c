@@ -15,8 +15,8 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
     switch(inst.type) {
       case BC_ADD:
       case BC_SUB: {
-        Type_Info result_type_info = fn.register_types.data[inst.data.bin_op.reg_a];
-        assert(result_type_info.type == TYPE_INT);
+        Type result_type = fn.register_types.data[inst.data.bin_op.reg_a];
+        assert(result_type.info->type == TYPE_INT);
 
         // The following works for all integers, signed or unsigned, and of any width.
         u64 result;
@@ -26,7 +26,7 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
           result = r[inst.data.bin_op.reg_b] - r[inst.data.bin_op.reg_c];
         }
         // Clear higher bits which may have junk data.
-        u8 width = result_type_info.data.integer.width;
+        u8 width = result_type.info->data.integer.width;
         if(width == 8) {
           result &= 0xff;
         } else if(width == 16) {
@@ -41,11 +41,11 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         u32 a = inst.data.bin_op.reg_a;
         u32 b = inst.data.bin_op.reg_b;
         u32 c = inst.data.bin_op.reg_c;
-        Type_Info b_type = fn.register_types.data[b];
-        Type_Info c_type = fn.register_types.data[c];
-        assert(b_type.type == TYPE_INT && c_type.type == TYPE_INT);
+        Type b_type = fn.register_types.data[b];
+        Type c_type = fn.register_types.data[c];
+        assert(b_type.info->type == TYPE_INT && c_type.info->type == TYPE_INT);
         // better way to do this comparison?
-        if(b_type.data.integer.is_signed || c_type.data.integer.is_signed) {
+        if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
           s64 *bv = &r[b];
           s64 *cv = &r[c];
           r[a] = *bv < *cv;

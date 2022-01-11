@@ -73,7 +73,7 @@ bool is_postfix_operator(Token t) {
 Ast_Literal *literal_int_to_ast(Token t) {
   Ast_Literal *n = allocate_ast_node(NODE_LITERAL, sizeof(Ast_Literal));
   n->n.loc = t.loc;
-  n->type = (Type_Info) {TYPE_UNKNOWN_INT, 0, {0}};
+  n->type = allocate_unknown_int_type(t.data.literal_int);
   n->value = t.data.literal_int;
   return n;
 }
@@ -143,7 +143,7 @@ Ast_If *if_to_ast(Ast_Node *cond, Location loc, Ast_Node *first, Ast_Node *secon
   Ast_If *n = allocate_ast_node(NODE_IF, sizeof(Ast_If));
   n->n.loc = loc;
   n->result_is_used = false;
-  n->result_type_info = NOTHING_TYPE_INFO;
+  n->result_type = NOTHING_TYPE;
   n->cond = cond;
   n->first = first;
   n->second = second;
@@ -387,25 +387,28 @@ typedef struct Symbol_Integer_Pair {
   symbol sym;
   u8 width;
   bool is_signed;
+  Type type;
 } Symbol_Integer_Pair;
 
 int SYMBOL_INTEGERS_COUNT = 10;
 Symbol_Integer_Pair symbol_integers[] =
-  {{"u8", NULL, 8, false},
-   {"u16", NULL, 16, false},
-   {"u32", NULL, 32, false},
-   {"u64", NULL, 64, false},
-   {"s8", NULL, 8, true},
-   {"s16", NULL, 16, true},
-   {"s32", NULL, 32, true},
-   {"s64", NULL, 64, true},
-   {"uint", NULL, 64, false},
-   {"int", NULL, 64, true}};
+  {{"u8", NULL, 8, false, {0,NULL}},
+   {"u16", NULL, 16, false, {0,NULL}},
+   {"u32", NULL, 32, false, {0,NULL}},
+   {"u64", NULL, 64, false, {0,NULL}},
+   {"s8", NULL, 8, true, {0,NULL}},
+   {"s16", NULL, 16, true, {0,NULL}},
+   {"s32", NULL, 32, true, {0,NULL}},
+   {"s64", NULL, 64, true, {0,NULL}},
+   {"uint", NULL, 64, false, {0,NULL}},
+   {"int", NULL, 64, true, {0,NULL}}};
 
 
 void register_parser_symbols() {
-  for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++)
+  for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
     symbol_integers[i].sym = st_get_id_of_null_terminated((char *)symbol_integers[i].str);
+    symbol_integers[i].type = integer_type_with(symbol_integers[i].is_signed, symbol_integers[i].width);;
+  }
 }
 
 Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
@@ -419,7 +422,7 @@ Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
   bool should_error = true;
   for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
     if(t.data.symbol == symbol_integers[i].sym) {
-      n->type_info = INT_TYPE_INFO(symbol_integers[i].is_signed, symbol_integers[i].width);
+      n->type = symbol_integers[i].type;
       should_error = false;
       break;
     }
@@ -477,7 +480,7 @@ Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
     n->n.loc = colon.loc;
     n->symbol = id.data.symbol;
     n->value = value_ast;
-    n->type_info = UNKNOWN_TYPE_INFO;
+    n->type = UNKNOWN_TYPE;
     return n;
   } else {
     revert_state(r);
@@ -488,8 +491,8 @@ Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
       Ast_Typed_Decl *n = allocate_ast_node(NODE_TYPED_DECL, sizeof(Ast_Typed_Decl));
       n->n.loc = colon.loc;
       n->symbol = id.data.symbol;
-      n->type = type_ast;
-      n->type_info = UNKNOWN_TYPE_INFO;
+      n->type_node = type_ast;
+      n->type = UNKNOWN_TYPE;
       return n;
     } else if(equals.type == TEQUALS) {
       // decl with type and set
@@ -498,9 +501,9 @@ Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
       Ast_Typed_Decl_Set *n = allocate_ast_node(NODE_TYPED_DECL_SET, sizeof(Ast_Typed_Decl_Set));
       n->n.loc = colon.loc;
       n->symbol = id.data.symbol;
-      n->type = type_ast;
+      n->type_node = type_ast;
       n->value = value_ast;
-      n->type_info = UNKNOWN_TYPE_INFO;
+      n->type = UNKNOWN_TYPE;
       return n;
     } else {
       error_unexpected_token(equals);
@@ -553,10 +556,22 @@ Ast *parse_file(Token_Reader *r) {
       body->scope = &result->scope;
       body->data.signature = sig;
       body->bytecode.function = malloc(sizeof(Bytecode_Function));
-      body->bytecode.function->parent = body;
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
 
       declaration_unit = sig;
+    } else if(node->type == NODE_STRUCT_DEFINITION) {
+      Ast_Struct_Definition *n = node;
+      Compilation_Unit *body = allocate_null_compilation_unit();
+
+      body->type = UNIT_STRUCT_BODY;
+      body->type_inferred = false;
+      body->type_inference_seen = false;
+      body->bytecode_generated = false;
+      body->bytecode_generating = false;
+      body->poisoned = false;
+      body->node = node;
+      body->scope = &result->scope;
+      Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
     } else {
       assert(false);
     }
@@ -621,19 +636,14 @@ Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope) {
   }
 }
 
-Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
-  Token identifier = peek_token(r);
-  Token double_colon = peek_token(r);
-  assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");
-  Token fn = peek_token(r);
 
-  if(fn.type != TFN) parse_error("Unexpected token. Only function definitions (using 'fn') are currently supported.", fn.loc, true);
 
+Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
   Token open_paren = peek_token(r);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 
   Ast_Function_Definition *n = allocate_ast_node(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
-  n->n.loc = double_colon.loc;
+  n->n.loc = loc;
   n->scope.is_ordered = true;
   n->scope.has_parent = true;
   n->scope.parent = scope;
@@ -655,8 +665,8 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
       Ast_Function_Parameter *param = allocate_ast_node(NODE_FUNCTION_PARAMETER, sizeof(Ast_Function_Parameter));
       param->n.loc = colon.loc;
       param->symbol = sym.data.symbol;
-      param->type = type;
-      param->type_info = UNKNOWN_TYPE_INFO;
+      param->type_node = type;
+      param->type = UNKNOWN_TYPE;
       Ast_Node_Ptr_Array_push(&parameters, param);
 
       Scope_Entry e;
@@ -677,11 +687,79 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
   Ast_Node *body = parse_block(r, &n->scope);
 
 
-  n->symbol = identifier.data.symbol;
+  n->symbol = identifier;
   n->parameters = parameters;
-  n->return_type = return_type;
-  n->return_type_info = UNKNOWN_TYPE_INFO;
+  n->return_type_node = return_type;
+  n->return_type = UNKNOWN_TYPE;
   n->body = body;
 
   return n;
+}
+
+Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
+
+  Ast_Struct_Definition *result = allocate_ast_node(NODE_STRUCT_DEFINITION, sizeof(Ast_Struct_Definition));
+  result->n.loc = loc;
+  result->symbol = identifier;
+  result->type = UNKNOWN_TYPE;
+  result->scope.is_ordered = false;
+  result->scope.has_parent = true;
+  result->scope.parent = scope;
+  result->scope.entries = init_Scope_Entry_Array(2);
+  result->members = init_Ast_Node_Ptr_Array(2);
+
+
+  Token open_brace = peek_token(r);
+  if(open_brace.type != TOPEN_BRACE) error_unexpected_token(open_brace);
+
+  while(1) {
+    save_state(r);
+    Token next = peek_token(r);
+    if(next.type == TCLOSE_BRACE)
+      return result;
+    else if(next.type == TEOL)
+      parse_error("'{' has no matching '}'", open_brace.loc, true);
+    revert_state(r);
+
+    Ast_Node *node = parse_decl(r, scope);
+    if(node->type == NODE_UNTYPED_DECL_SET)
+      parse_error("Struct members must have an explicit type.", node->loc, true);
+    assert(node->type == NODE_TYPED_DECL ||
+           node->type == NODE_TYPED_DECL_SET);
+
+    Ast_Node_Ptr_Array_push(&result->members, node);
+
+    Compilation_Unit *member =  allocate_null_compilation_unit();
+    member->type = UNIT_STRUCT_MEMBER;
+    member->type_inferred = false;
+    member->type_inference_seen = false;
+    member->bytecode_generated = false;
+    member->bytecode_generating = false;
+    member->poisoned = false;
+    member->node = node;
+    member->scope = &result->scope;
+
+    Scope_Entry e;
+    e.declaration.unit = member;
+    switch(node->type) {
+      case NODE_TYPED_DECL: e.symbol = ((Ast_Typed_Decl *)node)->symbol; break;
+      case NODE_TYPED_DECL_SET: e.symbol = ((Ast_Typed_Decl_Set *)node)->symbol; break;
+    }
+
+    Scope_Entry_Array_push(&scope->entries, e);
+  }
+
+  return result;
+}
+
+Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
+  Token identifier = peek_token(r);
+  Token double_colon = peek_token(r);
+  assert(identifier.type == TSYMBOL && double_colon.type == TDOUBLE_COLON && "(internal compiler error) definition must begin with symbol followed by double colon");
+  Token def_type = peek_token(r);
+  if(def_type.type == TFN) {
+    return parse_function_definition(r, identifier.data.symbol, double_colon.loc, scope);
+  } else if(def_type.type == TSTRUCT) {
+    return parse_struct_definition(r, identifier.data.symbol, double_colon.loc, scope);
+  } else parse_error("I expected 'struct' or 'fn'.", def_type.loc, true);
 }

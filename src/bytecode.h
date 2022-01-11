@@ -77,15 +77,15 @@ typedef struct Bytecode_Block {
 
 GENERATE_DARRAY_HEADER(Bytecode_Block, Bytecode_Block_Array);
 
-GENERATE_DARRAY_HEADER(Type_Info, Type_Info_Array);
+GENERATE_DARRAY_HEADER(Type, Type_Array);
 
 typedef struct Bytecode_Function {
   // For a function with n arguments, the arguments are passed in through the first n registers.
   u32 param_count;
   u32 entry_block;
-  Type_Info_Array register_types;
+  Type_Array register_types;
   Bytecode_Block_Array blocks;
-  Type_Info return_type;
+  Type return_type;
   LLVMValueRef llvm_function;
 } Bytecode_Function;
 

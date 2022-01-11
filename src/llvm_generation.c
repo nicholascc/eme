@@ -13,23 +13,23 @@
 #include <llvm-c/BitWriter.h>
 #include <llvm-c/TargetMachine.h>
 
-LLVMTypeRef llvm_type_of(Type_Info type) {
-  if(type.type == TYPE_INT) {
-    return LLVMIntType(type.data.integer.width);
-  } else if(type.type == TYPE_BOOL) {
+LLVMTypeRef llvm_type_of(Type type) {
+  if(type.info->type == TYPE_INT) {
+    return LLVMIntType(type.info->data.integer.width);
+  } else if(type.info->type == TYPE_BOOL) {
     return LLVMIntType(1);
   } else {
     assert(false);
   }
 }
 
-inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type_Info a_type, Type_Info b_type) {
-  assert(a_type.type == TYPE_INT &&
-         b_type.type == TYPE_INT);
-  u8 a_width = a_type.data.integer.width;
-  u8 b_width = b_type.data.integer.width;
+inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type a_type, Type b_type) {
+  assert(a_type.info->type == TYPE_INT &&
+         b_type.info->type == TYPE_INT);
+  u8 a_width = a_type.info->data.integer.width;
+  u8 b_width = b_type.info->data.integer.width;
   if(a_width < b_width) {
-    if(a_type.data.integer.is_signed)
+    if(a_type.info->data.integer.is_signed)
       return LLVMBuildSExt(builder, a, LLVMIntType(b_width), "");
     else
       return LLVMBuildZExt(builder, a, LLVMIntType(b_width), "");
@@ -98,9 +98,9 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
 
           {
-            Type_Info a_type = fn.register_types.data[inst.data.bin_op.reg_a];
-            Type_Info b_type = fn.register_types.data[inst.data.bin_op.reg_b];
-            Type_Info c_type = fn.register_types.data[inst.data.bin_op.reg_c];
+            Type a_type = fn.register_types.data[inst.data.bin_op.reg_a];
+            Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
+            Type c_type = fn.register_types.data[inst.data.bin_op.reg_c];
 
             b = generate_llvm_cast(builder, b, b_type, a_type);
             c = generate_llvm_cast(builder, c, c_type, a_type);
@@ -120,16 +120,16 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         case BC_LESS_THAN: {
           LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
           LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
-          Type_Info b_type = fn.register_types.data[inst.data.bin_op.reg_b];
-          Type_Info c_type = fn.register_types.data[inst.data.bin_op.reg_c];
-          assert(b_type.type == TYPE_INT && c_type.type == TYPE_INT);
+          Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
+          Type c_type = fn.register_types.data[inst.data.bin_op.reg_c];
+          assert(b_type.info->type == TYPE_INT && c_type.info->type == TYPE_INT);
 
-          Type_Info conv_type = INT_TYPE_INFO(b_type.data.integer.is_signed || c_type.data.integer.is_signed, max(b_type.data.integer.width, c_type.data.integer.width));
+          Type conv_type = integer_type_with(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed, max(b_type.info->data.integer.width, c_type.info->data.integer.width));
 
           b = generate_llvm_cast(builder, b, b_type, conv_type);
           c = generate_llvm_cast(builder, c, c_type, conv_type);
 
-          LLVMIntPredicate pred = conv_type.data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
+          LLVMIntPredicate pred = conv_type.info->data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
           LLVMValueRef a = LLVMBuildICmp(builder, pred, b, c, "");
           LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;
@@ -139,8 +139,8 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.set.reg_b], "");
           {
 
-            Type_Info a_type = fn.register_types.data[inst.data.set.reg_a];
-            Type_Info b_type = fn.register_types.data[inst.data.set.reg_b];
+            Type a_type = fn.register_types.data[inst.data.set.reg_a];
+            Type b_type = fn.register_types.data[inst.data.set.reg_b];
             b = generate_llvm_cast(builder, b, b_type, a_type);
           }
 
@@ -149,9 +149,9 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
 
         case BC_SET_LITERAL: {
-          Type_Info type = fn.register_types.data[inst.data.set_literal.reg_a];
-          assert(type.type == TYPE_INT);
-          LLVMValueRef a = LLVMConstInt(LLVMIntType(type.data.integer.width), inst.data.set_literal.lit_b, 0);
+          Type type = fn.register_types.data[inst.data.set_literal.reg_a];
+          assert(type.info->type == TYPE_INT);
+          LLVMValueRef a = LLVMConstInt(LLVMIntType(type.info->data.integer.width), inst.data.set_literal.lit_b, 0);
           LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
           break;
         }

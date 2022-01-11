@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
 
 
   st_init();
+  init_primitive_types();
   register_parser_symbols();
   init_file_array();
 

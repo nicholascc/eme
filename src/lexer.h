@@ -60,6 +60,7 @@ typedef enum Token_Type {
   TDOLLAR_SIGN,
 
   TFN,
+  TSTRUCT,
   TRETURN,
   TIF,
   TELSE,

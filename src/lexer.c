@@ -79,6 +79,7 @@ void print_token(Token t) {
     case TDOLLAR_SIGN:   printf("$"); break;
 
     case TFN:     printf("fn"); break;
+    case TSTRUCT: printf("struct"); break;
     case TRETURN: printf("return"); break;
     case TIF:     printf("if"); break;
     case TELSE:   printf("else"); break;
@@ -207,13 +208,17 @@ Token_Array lex_string(char *to_lex, int file_id) {
 
     // handle comments
     if(c == '/') {
-      if(to_lex[i+1] == '*')
+      if(to_lex[i+1] == '*') {
         comment_level++;
-      else if(to_lex[i+1] == '/')
+        i++;
+        loc.character++;
+        continue;
+      } else if(to_lex[i+1] == '/') {
         line_is_commented = true;
-      i++;
-      loc.character++;
-      continue;
+        i++;
+        loc.character++;
+        continue;
+      }
     } else if(c == '*' && to_lex[i+1] == '/') {
       comment_level--;
       i++;
@@ -245,6 +250,8 @@ Token_Array lex_string(char *to_lex, int file_id) {
         t.type = TELSE;
       } else if(len == 6 && 0 == memcmp(symbol_str, "return", 6)) {
         t.type = TRETURN;
+      } else if(len == 6 && 0 == memcmp(symbol_str, "struct", 6)) {
+        t.type = TSTRUCT;
       } else {
 
         t.data.symbol = st_get_id_of(symbol_str, len);
