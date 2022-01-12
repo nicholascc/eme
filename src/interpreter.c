@@ -48,6 +48,7 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         r[inst.data.bin_op.reg_a] = result;
         break;
       }
+      case BC_EQUALS:
       case BC_LESS_THAN: {
         u32 a = inst.data.bin_op.reg_a;
         u32 b = inst.data.bin_op.reg_b;
@@ -55,16 +56,22 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         Type b_type = fn.register_types.data[b];
         Type c_type = fn.register_types.data[c];
         assert(b_type.info->type == TYPE_INT && c_type.info->type == TYPE_INT);
-        // better way to do this comparison?
-        if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
-          s64 *bv = &r[b];
-          s64 *cv = &r[c];
-          r[a] = *bv < *cv;
-        } else {
-          u64 *bv = &r[b];
-          u64 *cv = &r[c];
-          r[a] = *bv < *cv;
-        }
+
+        if(inst.type == BC_LESS_THAN) {
+          // better way to do this comparison?
+          if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
+            s64 *bv = &r[b];
+            s64 *cv = &r[c];
+            r[a] = *bv < *cv;
+          } else {
+            u64 *bv = &r[b];
+            u64 *cv = &r[c];
+            r[a] = *bv < *cv;
+          }
+        } else if(inst.type == BC_EQUALS) {
+          r[a] = r[b] == r[c];
+        } else assert(false);
+
         break;
       }
       case BC_SET: {

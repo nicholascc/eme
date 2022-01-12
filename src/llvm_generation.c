@@ -126,6 +126,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           break;
         }
 
+        case BC_EQUALS:
         case BC_LESS_THAN: {
           LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
           LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
@@ -138,7 +139,12 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           b = generate_llvm_cast(builder, b, b_type, conv_type);
           c = generate_llvm_cast(builder, c, c_type, conv_type);
 
-          LLVMIntPredicate pred = conv_type.info->data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
+          LLVMIntPredicate pred;
+          if(inst.type == BC_LESS_THAN) {
+            pred = conv_type.info->data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
+          } else if(inst.type == BC_EQUALS) {
+            pred = LLVMIntEQ;
+          } else assert(false);
           LLVMValueRef a = LLVMBuildICmp(builder, pred, b, c, "");
           LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;

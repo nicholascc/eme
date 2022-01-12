@@ -42,6 +42,7 @@ bool is_non_unary_operator(Token t) {
     case TEQUALS:
     case TPLUS_EQUALS:
     case TMINUS_EQUALS:
+    case TDOUBLE_EQUALS:
     case TLESS_THAN:
     case TLESS_THAN_OR_EQUAL_TO:
     case TGREATER_THAN:
@@ -99,6 +100,7 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TEQUALS: ast_op = OPSET_EQUALS; break;
     case TPLUS_EQUALS: ast_op = OPPLUS_EQUALS; break;
     case TMINUS_EQUALS: ast_op = OPMINUS_EQUALS; break;
+    case TDOUBLE_EQUALS: ast_op = OPEQUALS; break;
     case TLESS_THAN: ast_op = OPLESS_THAN; break;
     case TLESS_THAN_OR_EQUAL_TO: ast_op = OPLESS_THAN_OR_EQUAL_TO; break;
     case TGREATER_THAN: ast_op = OPGREATER_THAN; break;
@@ -200,6 +202,7 @@ u8_pair binary_op_binding_power(Token_Type type) {
     case TQUESTION_MARK:
       return (u8_pair){4,3};
 
+    case TDOUBLE_EQUALS:
     case TLESS_THAN:
     case TLESS_THAN_OR_EQUAL_TO:
     case TGREATER_THAN:

@@ -40,6 +40,10 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       printf("div r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
     }
+    case BC_EQUALS: {
+      printf("eq r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
+    }
     case BC_LESS_THAN: {
       printf("less_than r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
@@ -172,6 +176,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         MACRO_ADD_BINARY_BYTECODE(OPMINUS, BC_SUB, add_register(fn, n->convert_to))
         MACRO_ADD_BINARY_BYTECODE(OPMUL, BC_MUL, add_register(fn, n->convert_to))
         MACRO_ADD_BINARY_BYTECODE(OPDIV, BC_DIV, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPEQUALS, BC_EQUALS, add_register(fn, BOOL_TYPE))
         MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN, BC_LESS_THAN, add_register(fn, BOOL_TYPE))
         // lookup table maybe?
         case OPSET_EQUALS: {

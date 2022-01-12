@@ -244,6 +244,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Ast_Function_Definition *f
           return POISON_TYPE;
         }
 
+        case OPEQUALS: // this needs to be handled by its own code later.
         case OPLESS_THAN:
         case OPLESS_THAN_OR_EQUAL_TO:
         case OPGREATER_THAN:
