@@ -279,22 +279,24 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         add_instruction(&fn->blocks.data[block_true.exit], inst);
       }
 
-
-      u32 if_false_result;
-      Bytecode_Ast_Block block_false = generate_bytecode_block(n->second, fn, scope);
-      cond.data.cond_branch.block_false = block_false.entry;
-      if(!fn->blocks.data[block_false.exit].is_concluded) {
-        if(n->result_is_used) {
+      if(n->second->type == NODE_NULL) {
+        cond.data.cond_branch.block_false = *block;
+      } else {
+        Bytecode_Ast_Block block_false = generate_bytecode_block(n->second, fn, scope);
+        cond.data.cond_branch.block_false = block_false.entry;
+        if(!fn->blocks.data[block_false.exit].is_concluded) {
+          if(n->result_is_used) {
+            Bytecode_Instruction inst;
+            inst.type = BC_SET;
+            inst.data.set.reg_a = if_result_reg;
+            inst.data.set.reg_b = block_false.result_reg;
+            add_instruction(&fn->blocks.data[block_false.exit], inst);
+          }
           Bytecode_Instruction inst;
-          inst.type = BC_SET;
-          inst.data.set.reg_a = if_result_reg;
-          inst.data.set.reg_b = block_false.result_reg;
+          inst.type = BC_BRANCH;
+          inst.data.branch.block = *block;
           add_instruction(&fn->blocks.data[block_false.exit], inst);
         }
-        Bytecode_Instruction inst;
-        inst.type = BC_BRANCH;
-        inst.data.branch.block = *block;
-        add_instruction(&fn->blocks.data[block_false.exit], inst);
       }
 
       add_instruction(&fn->blocks.data[prev_block], cond);
