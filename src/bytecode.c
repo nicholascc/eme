@@ -28,6 +28,18 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       printf("add r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
     }
+    case BC_SUB: {
+      printf("sub r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
+    }
+    case BC_MUL: {
+      printf("mul r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
+    }
+    case BC_DIV: {
+      printf("div r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
+    }
     case BC_LESS_THAN: {
       printf("less_than r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
@@ -125,6 +137,16 @@ Bytecode_Block init_bytecode_block() {
 u32 add_block_to_block(Ast_Block *block_node, Bytecode_Function *fn, u32 *block);
 Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope);
 
+u32 add_bin_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u32 a, u32 b, u32 c) {
+  Bytecode_Instruction inst;
+  inst.type = t;
+  inst.data.bin_op.reg_a = a;
+  inst.data.bin_op.reg_b = b;
+  inst.data.bin_op.reg_c = c;
+  add_instruction(block, inst);
+  return a;
+}
+
 // returns the register storing the result
 u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Scope *scope) {
   switch(node->type) {
@@ -140,24 +162,18 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_BINARY_OP: {
       Ast_Binary_Op *n = node;
       switch(n->operator) {
-        case OPPLUS: {
-          Bytecode_Instruction inst;
-          inst.type = BC_ADD;
-          inst.data.bin_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
-          inst.data.bin_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
-          inst.data.bin_op.reg_a = add_register(fn, n->convert_to);
-          add_instruction(&fn->blocks.data[*block], inst);
-          return inst.data.bin_op.reg_a;
-        }
-        case OPLESS_THAN: {
-          Bytecode_Instruction inst;
-          inst.type = BC_LESS_THAN;
-          inst.data.bin_op.reg_b = generate_bytecode_expr(n->first, block, fn, scope);
-          inst.data.bin_op.reg_c = generate_bytecode_expr(n->second, block, fn, scope);
-          inst.data.bin_op.reg_a = add_register(fn, BOOL_TYPE);
-          add_instruction(&fn->blocks.data[*block], inst);
-          return inst.data.bin_op.reg_a;
-        } // should combine these two cases above into single simplified code
+        #define MACRO_ADD_BINARY_BYTECODE(op_type, inst_type, result_reg)\
+          case op_type: \
+            return add_bin_op_instruction(&fn->blocks.data[*block], inst_type,\
+                                          result_reg,\
+                                          generate_bytecode_expr(n->first, block, fn, scope),\
+                                          generate_bytecode_expr(n->second, block, fn, scope));
+        MACRO_ADD_BINARY_BYTECODE(OPPLUS, BC_ADD, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPMINUS, BC_SUB, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPMUL, BC_MUL, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPDIV, BC_DIV, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN, BC_LESS_THAN, add_register(fn, BOOL_TYPE))
+        // lookup table maybe?
         case OPSET_EQUALS: {
           symbol symbol;
           {

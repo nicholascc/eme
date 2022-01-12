@@ -93,12 +93,16 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
       Bytecode_Instruction inst = block.instructions.data[j];
       switch(inst.type) {
         case BC_ADD:
-        case BC_SUB: {
+        case BC_SUB:
+        case BC_MUL:
+        case BC_DIV: {
           LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
           LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
 
+
+          Type a_type = fn.register_types.data[inst.data.bin_op.reg_a];
+          assert(a_type.info->type == TYPE_INT);
           {
-            Type a_type = fn.register_types.data[inst.data.bin_op.reg_a];
             Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
             Type c_type = fn.register_types.data[inst.data.bin_op.reg_c];
 
@@ -109,9 +113,14 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMValueRef a;
           if(inst.type == BC_ADD) {
             a = LLVMBuildAdd(builder, b, c, "");
-          } else {
+          } else if(inst.type == BC_SUB) {
             a = LLVMBuildSub(builder, b, c, "");
-          }
+          } else if(inst.type == BC_MUL) {
+            a = LLVMBuildMul(builder, b, c, "");
+          } else if(inst.type == BC_DIV) {
+            if(a_type.info->data.integer.is_signed) a = LLVMBuildSDiv(builder, b, c, "");
+            else a = LLVMBuildUDiv(builder, b, c, "");
+          } else assert(false);
 
           LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;

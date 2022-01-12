@@ -10,6 +10,8 @@
 typedef enum Bytecode_Instruction_Type {
   BC_ADD,
   BC_SUB,
+  BC_MUL,
+  BC_DIV,
 
   BC_LESS_THAN,
 

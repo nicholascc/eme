@@ -14,7 +14,9 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
     Bytecode_Instruction inst = block.instructions.data[inst_i];
     switch(inst.type) {
       case BC_ADD:
-      case BC_SUB: {
+      case BC_SUB:
+      case BC_MUL:
+      case BC_DIV: {
         Type result_type = fn.register_types.data[inst.data.bin_op.reg_a];
         assert(result_type.info->type == TYPE_INT);
 
@@ -22,9 +24,18 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         u64 result;
         if(inst.type == BC_ADD) {
           result = r[inst.data.bin_op.reg_b] + r[inst.data.bin_op.reg_c];
-        } else {
+        } else if(inst.type == BC_SUB) {
           result = r[inst.data.bin_op.reg_b] - r[inst.data.bin_op.reg_c];
-        }
+        } else if(inst.type == BC_MUL) {
+          result = r[inst.data.bin_op.reg_b] * r[inst.data.bin_op.reg_c];
+        } else if(inst.type == BC_DIV) {
+          if(r[inst.data.bin_op.reg_c] == 0) {
+            // TODO: HANDLE INTERPRETER ERRORS PROPERLY
+            assert(false);
+          }
+          result = r[inst.data.bin_op.reg_b] / r[inst.data.bin_op.reg_c];
+        } else assert(false);
+
         // Clear higher bits which may have junk data.
         u8 width = result_type.info->data.integer.width;
         if(width == 8) {
