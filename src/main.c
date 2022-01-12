@@ -59,6 +59,8 @@ int main(int argc, char *argv[]) {
 
   bool compilation_has_errors = false;
 
+  Bytecode_Function main;
+  bool main_found = false;
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
     Compilation_Unit *unit = entry.declaration.unit;
@@ -70,12 +72,23 @@ int main(int argc, char *argv[]) {
         compilation_has_errors = true;
       } else {
         print_bytecode_compilation_unit(body);
-        Bytecode_Function fn = *body->bytecode.function;
-        u64 *env = init_interpreted_function_environment(fn);
-        printf("RETURNED: %lli\n", interpret_bytecode_function(fn, env));
+        assert(body->node->type == NODE_FUNCTION_DEFINITION);
+        Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
+        if(n->symbol == st_get_id_of("eme", 3)) {
+          main = *body->bytecode.function;
+          main_found = true;
+        }
       }
     }
   }
+
+  if(!main_found) {
+    print_error_message("I can't find the main function.", NULL_LOCATION);
+    exit(1);
+  }
+
+  u64 *env = init_interpreted_function_environment(main);
+  printf("RETURNED: %lli\n", interpret_bytecode_function(main, env));
 
   if(compilation_has_errors) {
     printf("\n\nThere were errors during compilation, exiting.\n");
