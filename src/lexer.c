@@ -83,6 +83,7 @@ void print_token(Token t) {
     case TRETURN: printf("return"); break;
     case TIF:     printf("if"); break;
     case TELSE:   printf("else"); break;
+    case TWHILE:  printf("while"); break;
     default: printf("unknown: %i", t.type); break;
   }
   printf("\")\n");
@@ -252,6 +253,8 @@ Token_Array lex_string(char *to_lex, int file_id) {
         t.type = TRETURN;
       } else if(len == 6 && 0 == memcmp(symbol_str, "struct", 6)) {
         t.type = TSTRUCT;
+      } else if(len == 5 && 0 == memcmp(symbol_str, "while", 5)) {
+        t.type = TWHILE;
       } else {
 
         t.data.symbol = st_get_id_of(symbol_str, len);

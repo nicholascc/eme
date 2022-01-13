@@ -400,6 +400,18 @@ Type infer_types_of_block(Ast_Node *node_block, Ast_Function_Definition *fn_def,
         break;
       }
 
+      case NODE_WHILE: {
+        last_statement_type = NOTHING_TYPE;
+        Ast_While *n = node;
+        Type cond = infer_type_of_expr(n->cond, &block->scope, fn_def, true, unit_poisoned);
+
+        if(!can_implicitly_cast(cond, BOOL_TYPE))
+          error_cannot_implicitly_cast(cond, BOOL_TYPE, n->n.loc, false, unit_poisoned);
+
+        Type body = infer_type_of_expr(n->body, &block->scope, fn_def, false, unit_poisoned);
+        break;
+      }
+
       case NODE_TYPED_DECL:
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {

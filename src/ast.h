@@ -65,6 +65,7 @@ typedef enum Ast_Node_Type {
   NODE_BINARY_OP,
   NODE_UNARY_OP,
   NODE_IF,
+  NODE_WHILE,
   NODE_FUNCTION_CALL,
   NODE_SYMBOL,
   NODE_BLOCK,
@@ -229,6 +230,12 @@ typedef struct Ast_If {
   Ast_Node *first;
   Ast_Node *second;
 } Ast_If;
+
+typedef struct Ast_While {
+  Ast_Node n;
+  Ast_Node *cond;
+  Ast_Node *body;
+} Ast_While;
 
 typedef struct Ast_Function_Call {
   Ast_Node n;

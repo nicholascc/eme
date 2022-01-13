@@ -460,6 +460,23 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
     n->value = parse_expression(r, scope, 0, NULL);
     expect_and_eat_semicolon(r);
     return n;
+  } else if(first.type == TWHILE) {
+    {
+      Token t = peek_token(r);
+      if(t.type != TOPEN_PAREN) {
+        print_error_message("The conditional for an if statement must be parenthesized.", t.loc);
+        exit(1);
+      }
+    }
+    Ast_While *n = allocate_ast_node(NODE_WHILE, sizeof(Ast_While));
+    n->n.loc = first.loc;
+    n->cond = parse_expression(r, scope, 0, NULL);
+    {
+      Token t = peek_token(r);
+      if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
+    }
+    n->body = parse_any_statement(r, scope, false);
+    return n;
   }
 
   revert_state(r);

@@ -302,6 +302,38 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       add_instruction(&fn->blocks.data[prev_block], cond);
       return n->result_is_used ? if_result_reg : -1;
     }
+    case NODE_WHILE: {
+      Ast_While *n = node;
+
+      u32 prev_block = *block;
+      Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
+      *block = fn->blocks.length - 1;
+
+      Bytecode_Ast_Block block_cond = generate_bytecode_block(n->cond, fn, scope);
+      Bytecode_Ast_Block block_body = generate_bytecode_block(n->body, fn, scope);
+      {
+        Bytecode_Instruction cond;
+        cond.type = BC_COND_BRANCH;
+        cond.data.cond_branch.reg_cond = block_cond.result_reg;
+        cond.data.cond_branch.block_true = block_body.entry;
+        cond.data.cond_branch.block_false = *block;
+        add_instruction(&fn->blocks.data[block_cond.exit], cond);
+      }
+      {
+        Bytecode_Instruction back;
+        back.type = BC_BRANCH;
+        back.data.branch.block = block_cond.entry;
+        add_instruction(&fn->blocks.data[block_body.exit], back);
+      }
+      {
+        Bytecode_Instruction intro;
+        intro.type = BC_BRANCH;
+        intro.data.branch.block = block_cond.entry;
+        add_instruction(&fn->blocks.data[prev_block], intro);
+      }
+
+      return -1;
+    }
     case NODE_FUNCTION_CALL: {
       Ast_Function_Call *n = node;
       infer_types_of_compilation_unit(n->signature->data.body);

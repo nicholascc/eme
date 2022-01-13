@@ -64,6 +64,7 @@ typedef enum Token_Type {
   TRETURN,
   TIF,
   TELSE,
+  TWHILE,
 
   TLITERAL_INT,
   TLITERAL_BOOL,
