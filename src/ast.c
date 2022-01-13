@@ -206,6 +206,15 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_WHILE: {
+      Ast_While *n = node;
+      printf("while ");
+      print_ast_node(n->cond);
+      printf(" ");
+      print_ast_node(n->body);
+      break;
+    }
+
     case NODE_FUNCTION_CALL: {
       Ast_Function_Call *n = node;
       print_ast_node(n->identifier);
