@@ -226,7 +226,7 @@ Token_Array lex_string(char *to_lex, int file_id) {
       loc.character++;
       if(comment_level < 0) {
         print_error(loc);
-        printf("Unexpected comment end.\n");
+        printf("Unexpected comment end, ignoring.\n");
       }
       continue;
     }

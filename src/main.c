@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     Scope_Entry entry = ast->scope.entries.data[i];
     Compilation_Unit *unit = entry.declaration.unit;
     if(unit->type == UNIT_FUNCTION_SIGNATURE) {
-      Compilation_Unit *body = unit->data.body;
+      Compilation_Unit *body = unit->data.signature.body;
       infer_types_of_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
       if(body->poisoned) {
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
         assert(body->node->type == NODE_FUNCTION_DEFINITION);
         Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
         if(n->symbol == st_get_id_of("eme", 3)) {
-          main = *body->bytecode.function;
+          main = *body->data.body.bytecode;
           main_found = true;
         }
       }
@@ -87,8 +87,9 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  u64 *env = init_interpreted_function_environment(main);
-  printf("RETURNED: %lli\n", interpret_bytecode_function(main, env));
+  print_bytecode_function(main);
+  
+  printf("RETURNED: %lli\n", *((s64 *)interpret_bytecode_function(main, NULL)));
 
   if(compilation_has_errors) {
     printf("\n\nThere were errors during compilation, exiting.\n");

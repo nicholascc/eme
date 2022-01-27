@@ -19,6 +19,14 @@ typedef enum Bytecode_Instruction_Type {
   BC_SET,
   BC_SET_LITERAL,
 
+  BC_REF_TO, // reference to the register
+
+  BC_GET_MEMBER_PTR, // behaves similar to llvm getelementptr, taking a pointer
+                      // to a struct and a memmber id in that struct, and returning
+                      // a pointer to the memmber.
+  BC_LOAD,
+  BC_STORE,
+
   BC_CALL,
   BC_ARG,
 
@@ -45,6 +53,27 @@ typedef struct Bytecode_Instruction {
       u32 reg_b;
       u32 reg_c;
     } bin_op;
+
+    struct {
+      u32 reg_a;
+      u32 reg_b;
+    } ref_to;
+
+    struct {
+      u32 reg_a;
+      u32 reg_b;
+      u32 member;
+    } get_member_ptr;
+
+    struct {
+      u32 reg_a;
+      u32 reg_b;
+    } store;
+
+    struct {
+      u32 reg_a;
+      u32 reg_b;
+    } load;
 
     struct {
       Bytecode_Function *to;

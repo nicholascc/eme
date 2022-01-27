@@ -14,37 +14,52 @@
 #include <llvm-c/TargetMachine.h>
 
 LLVMTypeRef llvm_type_of(Type type) {
-  if(type.info->type == TYPE_INT) {
-    return LLVMIntType(type.info->data.integer.width);
-  } else if(type.info->type == TYPE_BOOL) {
-    return LLVMIntType(1);
+  if(type.reference_count > 0) {
+    return LLVMPointerType(llvm_type_of((Type){type.reference_count-1, type.info}), 0);
   } else {
-    assert(false);
+    if(type.info->type == TYPE_INT) {
+      return LLVMIntType(type.info->data.integer.width);
+    } else if(type.info->type == TYPE_BOOL) {
+      return LLVMIntType(1);
+    } else if(type.info->type == TYPE_STRUCT) {
+      if(type.info->data.struct_.llvm_generated) return type.info->data.struct_.llvm_type;
+      u32 element_count = type.info->data.struct_.members.length;
+      LLVMTypeRef *element_types = malloc(sizeof(LLVMTypeRef) * element_count);
+      for(int i = 0; i < element_count; i++) {
+        element_types[i] = llvm_type_of(type.info->data.struct_.members.data[i].type);
+      }
+      type.info->data.struct_.llvm_type = LLVMStructType(element_types, element_count, false);
+      type.info->data.struct_.llvm_generated = true;
+      return type.info->data.struct_.llvm_type;
+    } else assert(false);
   }
 }
 
 inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type a_type, Type b_type) {
-  assert(a_type.info->type == TYPE_INT &&
-         b_type.info->type == TYPE_INT);
-  u8 a_width = a_type.info->data.integer.width;
-  u8 b_width = b_type.info->data.integer.width;
-  if(a_width < b_width) {
-    if(a_type.info->data.integer.is_signed)
-      return LLVMBuildSExt(builder, a, LLVMIntType(b_width), "");
+  if(a_type.info->type == TYPE_INT) {
+    assert(b_type.info->type == TYPE_INT);
+    u8 a_width = a_type.info->data.integer.width;
+    u8 b_width = b_type.info->data.integer.width;
+    if(a_width < b_width) {
+      if(a_type.info->data.integer.is_signed)
+        return LLVMBuildSExt(builder, a, LLVMIntType(b_width), "");
+      else
+        return LLVMBuildZExt(builder, a, LLVMIntType(b_width), "");
+    } else if(a_width > b_width)
+      return LLVMBuildTrunc(builder, a, LLVMIntType(b_width), "");
     else
-      return LLVMBuildZExt(builder, a, LLVMIntType(b_width), "");
-  } else if(a_width > b_width)
-    return LLVMBuildTrunc(builder, a, LLVMIntType(b_width), "");
-  else
+      return a;
+  } else {
     return a;
+  }
 }
 
 
 // the compilation unit supplied here must be a function body.
 void generate_llvm_function_signature(LLVMModuleRef mod, Compilation_Unit unit) {
   assert(unit.type == UNIT_FUNCTION_BODY);
-  Bytecode_Function *fn = unit.bytecode.function;
-  LLVMValueRef *arg_types = malloc(fn->param_count * sizeof(LLVMTypeRef));
+  Bytecode_Function *fn = unit.data.body.bytecode;
+  LLVMTypeRef *arg_types = malloc(fn->param_count * sizeof(LLVMTypeRef));
   for(int i = 0; i < fn->param_count; i++) {
     arg_types[i] = llvm_type_of(fn->register_types.data[i]);
   }
@@ -170,6 +185,54 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
           break;
         }
+
+        case BC_REF_TO: {
+          Type a_type = fn.register_types.data[inst.data.ref_to.reg_a];
+          Type b_type = fn.register_types.data[inst.data.ref_to.reg_b];
+          assert(b_type.reference_count+1 == a_type.reference_count);
+          LLVMValueRef b_ptr = r[inst.data.ref_to.reg_b];
+          LLVMBuildStore(builder, b_ptr, r[inst.data.bin_op.reg_a]);
+          break;
+        }
+
+        case BC_GET_MEMBER_PTR: {
+          Type a_type = fn.register_types.data[inst.data.get_member_ptr.reg_a];
+          Type b_type = fn.register_types.data[inst.data.get_member_ptr.reg_b];
+          assert(b_type.reference_count == 1);
+          b_type.reference_count--;
+
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.get_member_ptr.reg_b], "");
+          LLVMValueRef a = LLVMBuildStructGEP2(builder, llvm_type_of(b_type), b, inst.data.get_member_ptr.member, "");
+
+          LLVMBuildStore(builder, a, r[inst.data.get_member_ptr.reg_a]);
+          break;
+        }
+
+        case BC_LOAD: {
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.set.reg_b], "");
+          LLVMValueRef a = LLVMBuildLoad(builder, b, "");
+          {
+            Type a_type = fn.register_types.data[inst.data.set.reg_a];
+            Type b_type = fn.register_types.data[inst.data.set.reg_b];
+            b_type.reference_count--;
+            a = generate_llvm_cast(builder, a, a_type, b_type);
+          }
+          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
+          break;
+        }
+        case BC_STORE: {
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.set.reg_b], "");
+          {
+            Type a_type = fn.register_types.data[inst.data.set.reg_a];
+            Type b_type = fn.register_types.data[inst.data.set.reg_b];
+            a_type.reference_count--;
+            b = generate_llvm_cast(builder, b, b_type, a_type);
+          }
+          LLVMValueRef a_ptr = LLVMBuildLoad(builder, r[inst.data.set.reg_a], "");
+          LLVMBuildStore(builder, b, a_ptr);
+          break;
+        }
+
         case BC_CALL: {
           Bytecode_Function to_call = *inst.data.call.to;
           u32 result_reg = inst.data.call.reg;
@@ -241,7 +304,7 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
   for(int i = 0; i < ast.compilation_units.length; i++) {
     Compilation_Unit unit = *ast.compilation_units.data[i];
     if(unit.type != UNIT_FUNCTION_BODY) continue;
-    Bytecode_Function fn = *unit.bytecode.function;
+    Bytecode_Function fn = *unit.data.body.bytecode;
     generate_llvm_function(mod, builder, fn);
   }
 

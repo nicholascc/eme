@@ -3,11 +3,63 @@
 #include "c-utils/integer.h"
 #include "bytecode.h"
 
-u64 *init_interpreted_function_environment(Bytecode_Function fn) {
-  return malloc(sizeof(u64) * fn.register_types.length);
+void print_hex(u8 *arr, u32 size) {
+  for(int i = 0; i < size; i++) {
+    printf("%02hhX ", arr[i]);
+  }
+  printf("\n");
 }
 
-u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
+void interpreter_cast(u8 *a, u8 *b, Type a_type, Type b_type) {
+  u32 a_size = size_of_type(a_type);
+  u32 b_size = size_of_type(b_type);
+  if(a_type.info->type == TYPE_INT && a_size < b_size && a_type.info->data.integer.is_signed) {
+    assert(b_type.info->type == TYPE_INT);
+    s64 x;
+    switch(a_size) {
+      case 1: x = *((s8 *)a); break;
+      case 2: x = *((s16 *)a); break;
+      case 4: x = *((s32 *)a); break;
+      case 8: x = *((s64 *)a); break;
+      default: assert(false);
+    }
+    switch(b_size) {
+      case 1: *((s8 *)b) = (s8)x; break;
+      case 2: *((s16 *)b) = (s16)x; break;
+      case 4: *((s32 *)b) = (s32)x; break;
+      case 8: *((s64 *)b) = (s64)x; break;
+      default: assert(false);
+    }
+  } else if(a_size < b_size) {
+    memcpy(b, a, a_size);
+    memset((u8 *)(a_size + (u64)b), 0, b_size - a_size);
+  } else {
+    memcpy(b, a, b_size);
+  }
+}
+
+u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
+  u32 *r_to_id = malloc(sizeof(u32) * fn.register_types.length);
+  u32 local_scope_size = 0;
+  for(int i = 0; i < fn.register_types.length; i++) {
+    u32 size = size_of_type(fn.register_types.data[i]);
+    u32 alignment = alignment_of_size(size);
+    if(local_scope_size % alignment != 0) local_scope_size += alignment - local_scope_size % alignment;
+    assert(local_scope_size % alignment == 0);
+
+    r_to_id[i] = local_scope_size;
+    local_scope_size += size;
+  }
+
+  u8 *local = malloc(sizeof(u8) * local_scope_size);
+  memset(local, 0, local_scope_size);
+
+  for(int i = 0; i < fn.param_count; i++) {
+    u32 size = size_of_type(fn.register_types.data[i]);
+    memcpy(&local[r_to_id[i]], params[i], size);
+  }
+  free(params);
+
   Bytecode_Block block = fn.blocks.data[fn.entry_block];
   int inst_i = 0;
   while(true) {
@@ -17,83 +69,125 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
       case BC_SUB:
       case BC_MUL:
       case BC_DIV: {
-        Type result_type = fn.register_types.data[inst.data.bin_op.reg_a];
+        u32 reg_a = inst.data.bin_op.reg_a;
+        u32 reg_b = inst.data.bin_op.reg_b;
+        u32 reg_c = inst.data.bin_op.reg_c;
+        Type result_type = fn.register_types.data[reg_a];
         assert(result_type.info->type == TYPE_INT);
 
-        // The following works for all integers, signed or unsigned, and of any width.
-        u64 result;
-        if(inst.type == BC_ADD) {
-          result = r[inst.data.bin_op.reg_b] + r[inst.data.bin_op.reg_c];
-        } else if(inst.type == BC_SUB) {
-          result = r[inst.data.bin_op.reg_b] - r[inst.data.bin_op.reg_c];
-        } else if(inst.type == BC_MUL) {
-          result = r[inst.data.bin_op.reg_b] * r[inst.data.bin_op.reg_c];
-        } else if(inst.type == BC_DIV) {
-          if(r[inst.data.bin_op.reg_c] == 0) {
-            // TODO: HANDLE INTERPRETER ERRORS PROPERLY
-            assert(false);
-          }
-          result = r[inst.data.bin_op.reg_b] / r[inst.data.bin_op.reg_c];
+        u64 b, c;
+        memcpy(&b, &local[r_to_id[reg_b]], size_of_type(fn.register_types.data[reg_b]));
+        memcpy(&c, &local[r_to_id[reg_c]], size_of_type(fn.register_types.data[reg_c]));
+
+        u64 a;
+        if(inst.type == BC_ADD)
+          a = b + c;
+        else if(inst.type == BC_SUB)
+          a = b - c;
+        else if(inst.type == BC_MUL)
+          a = b * c;
+        else if(inst.type == BC_DIV) {
+          if(c == 0) assert(false); // TODO: HANDLE INTERPRETER ERRORS PROPERLY
+          a = b / c;
         } else assert(false);
 
-        // Clear higher bits which may have junk data.
-        u8 width = result_type.info->data.integer.width;
-        if(width == 8) {
-          result &= 0xff;
-        } else if(width == 16) {
-          result &= 0xffff;
-        } else if(width == 32) {
-          result &= 0xffffffff;
-        }
-        r[inst.data.bin_op.reg_a] = result;
+        memcpy(&local[r_to_id[reg_a]], &a, size_of_type(fn.register_types.data[reg_a]));
         break;
       }
       case BC_EQUALS:
       case BC_LESS_THAN: {
-        u32 a = inst.data.bin_op.reg_a;
-        u32 b = inst.data.bin_op.reg_b;
-        u32 c = inst.data.bin_op.reg_c;
-        Type b_type = fn.register_types.data[b];
-        Type c_type = fn.register_types.data[c];
+        u32 reg_a = inst.data.bin_op.reg_a;
+        u32 reg_b = inst.data.bin_op.reg_b;
+        u32 reg_c = inst.data.bin_op.reg_c;
+        Type b_type = fn.register_types.data[reg_b];
+        Type c_type = fn.register_types.data[reg_c];
         assert(b_type.info->type == TYPE_INT && c_type.info->type == TYPE_INT);
 
+        u64 b = 0;
+        u64 c = 0;
+        memcpy(&b, &local[r_to_id[reg_b]], size_of_type(fn.register_types.data[reg_b]));
+        memcpy(&c, &local[r_to_id[reg_c]], size_of_type(fn.register_types.data[reg_c]));
+
+        bool a;
         if(inst.type == BC_LESS_THAN) {
           // better way to do this comparison?
           if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
-            s64 *bv = &r[b];
-            s64 *cv = &r[c];
-            r[a] = *bv < *cv;
+            // do a signed comparison using pointer casts.
+            a = *((s64 *)&b) < *((s64 *)&c);
           } else {
-            u64 *bv = &r[b];
-            u64 *cv = &r[c];
-            r[a] = *bv < *cv;
+            a = b < c;
           }
         } else if(inst.type == BC_EQUALS) {
-          r[a] = r[b] == r[c];
-        } else assert(false);
-
+          a = b == c;
+        }
+        local[r_to_id[reg_a]] = a;
         break;
       }
+
       case BC_SET: {
-        r[inst.data.set.reg_a] = r[inst.data.set.reg_b];
+        u32 reg_a = inst.data.set.reg_a;
+        u32 reg_b = inst.data.set.reg_b;
+        interpreter_cast(&local[r_to_id[reg_b]], &local[r_to_id[reg_a]], fn.register_types.data[reg_b], fn.register_types.data[reg_a]);
         break;
       }
       case BC_SET_LITERAL: {
-        r[inst.data.set_literal.reg_a] = inst.data.set_literal.lit_b;
+        u32 reg_a = inst.data.set.reg_a;
+        u32 a_size = size_of_type(fn.register_types.data[reg_a]);
+        assert(a_size <= 8);
+        memcpy(&local[r_to_id[reg_a]], &inst.data.set_literal.lit_b, a_size);
+        break;
+      }
+      case BC_REF_TO: {
+        u32 reg_a = inst.data.ref_to.reg_a;
+        u32 reg_b = inst.data.ref_to.reg_b;
+        assert(size_of_type(fn.register_types.data[reg_a]) == 8);
+        u64 *a = (u64 *)(&local[r_to_id[reg_a]]);
+        *a = (u64)(&local[r_to_id[reg_b]]);
+        break;
+      }
+      case BC_GET_MEMBER_PTR: {
+        u32 reg_a = inst.data.ref_to.reg_a;
+        u32 reg_b = inst.data.ref_to.reg_b;
+        Type b_type = fn.register_types.data[reg_b];
+
+        u32 member = inst.data.get_member_ptr.member;
+        u32 offset = b_type.info->data.struct_.members.data[member].offset;
+        u64 b_u64 = *((u64 *)&local[r_to_id[reg_b]]);
+
+        u64 *a = (u64 *)(&local[r_to_id[reg_a]]);
+        *a = b_u64 + offset;
+        break;
+      }
+      case BC_LOAD: {
+        u32 reg_a = inst.data.ref_to.reg_a;
+        u32 reg_b = inst.data.ref_to.reg_b;
+        u32 a_size = size_of_type(fn.register_types.data[reg_a]);
+        u64 b = *((u64 *)&local[r_to_id[reg_b]]);
+        memcpy(&local[r_to_id[reg_a]], (u8 *)b, a_size);
+        break;
+      }
+      case BC_STORE: {
+        u32 reg_a = inst.data.ref_to.reg_a;
+        u32 reg_b = inst.data.ref_to.reg_b;
+        u32 b_size = size_of_type(fn.register_types.data[reg_b]);
+        u64 a = *((u64 *)&local[r_to_id[reg_a]]);
+        memcpy((u8 *)a, &local[r_to_id[reg_b]], b_size);
         break;
       }
       case BC_CALL: {
         Bytecode_Function to_call = *inst.data.call.to;
         u32 result_reg = inst.data.call.reg;
-        u64 *env = init_interpreted_function_environment(to_call);
 
+        u8 **params = malloc(to_call.param_count * sizeof(u8 *));
         for(int k = 0; k < to_call.param_count; k++) {
           inst_i++;
           inst = block.instructions.data[inst_i];
           assert(inst.type == BC_ARG);
-          env[k] = r[inst.data.arg.reg];
+          params[k] = &local[r_to_id[inst.data.arg.reg]];
         }
-        r[result_reg] = interpret_bytecode_function(to_call, env);
+        u8 *result_ptr = interpret_bytecode_function(to_call, params);
+        memcpy(&local[r_to_id[result_reg]], result_ptr, size_of_type(fn.register_types.data[result_reg]));
+        free(result_ptr);
         break;
       }
       case BC_ARG: {
@@ -102,8 +196,11 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         exit(1);
       }
       case BC_RETURN: {
-        u64 result = r[inst.data.ret.reg];
-        free(r);
+        u32 reg = inst.data.ret.reg;
+        u8 *result = calloc(fn.return_type.info->size, sizeof(u8));
+        interpreter_cast(&local[r_to_id[reg]], result, fn.register_types.data[reg], fn.return_type);
+        free(r_to_id);
+        free(local);
         return result;
       }
       case BC_BRANCH: {
@@ -112,7 +209,8 @@ u64 interpret_bytecode_function(Bytecode_Function fn, u64 *r) {
         break;
       }
       case BC_COND_BRANCH: {
-        if(r[inst.data.cond_branch.reg_cond])
+        u32 cond_reg = inst.data.cond_branch.reg_cond;
+        if(local[r_to_id[cond_reg]] != 0)
           block = fn.blocks.data[inst.data.cond_branch.block_true];
         else
           block = fn.blocks.data[inst.data.cond_branch.block_false];

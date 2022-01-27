@@ -5,6 +5,7 @@
 #include "symbol_table.h"
 #include "errors.h"
 
+GENERATE_DARRAY_CODE(Struct_Member, Struct_Member_Array);
 GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
 GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
@@ -12,32 +13,42 @@ GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 Ast_Node NULL_AST_NODE = {NODE_NULL, {-1,-1,-1}};
 
 
+u32 size_of_type(Type t) {
+  if(t.reference_count > 0) return 8;
+  else return t.info->size;
+}
+
+u32 alignment_of_size(u32 size) {
+  if(size == 1) return 1;
+  if(size == 2) return 2;
+  if(size <= 4) return 4;
+  return 8;
+}
+
 void init_primitive_types() {
   Type_Info *infos = malloc(32*sizeof(Type_Info)); // just allocate more space than necessary
   int n = 0;
-  infos[n] = (Type_Info) {TYPE_UNKNOWN, {0}};
+  infos[n] = (Type_Info) {TYPE_UNKNOWN, 0, {0}};
   UNKNOWN_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_NOTHING, {0}};
+  infos[n] = (Type_Info) {TYPE_NOTHING, 0, {0}};
   NOTHING_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_POISON, {0}};
+  infos[n] = (Type_Info) {TYPE_POISON, 0, {0}};
   POISON_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_BOOL, {0}};
-  BOOL_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_BOOL, {0}};
+  infos[n] = (Type_Info) {TYPE_BOOL, 1, {0}};
   BOOL_TYPE = (Type) {0, &infos[n++]};
 
   for(int i = 0; i < 2; i++) {
     bool is_signed = i;
     for(int j = 0; j < 4; j++) {
-      u8 width;
+      u8 width_bytes;
       switch(j) {
-        case 0: width = 8; break;
-        case 1: width = 16; break;
-        case 2: width = 32; break;
-        case 3: width = 64; break;
+        case 0: width_bytes = 1; break;
+        case 1: width_bytes = 2; break;
+        case 2: width_bytes = 4; break;
+        case 3: width_bytes = 8; break;
         default: assert(false);
       }
-      infos[n] = (Type_Info) {TYPE_INT, {.integer={is_signed,width}}};
+      infos[n] = (Type_Info) {TYPE_INT, width_bytes, {.integer={is_signed,width_bytes*8}}};
       INTEGER_TYPES[i][j] = (Type) {0, &infos[n++]};
     }
   }
@@ -76,13 +87,15 @@ void print_type_info(Type_Info t) {
       break;
     }
     case TYPE_BOOL: printf("bool"); break;
-    case TYPE_UNKNOWN_INT: printf("literal integer"); break;
+    case TYPE_UNKNOWN_INT: printf("literal integer (%lli)", t.data.unknown_int); break;
+    case TYPE_STRUCT: print_symbol(t.data.struct_.definition->symbol); break;
     default:
       printf("(unprintable type)"); break;
   }
 }
 
 void print_type(Type t) {
+  for(int i = 0; i < t.reference_count; i++) printf("*");
   print_type_info(*t.info);
 }
 
@@ -132,13 +145,13 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_LITERAL: {
-      Ast_Literal *n = node;
+      Ast_Literal *n = (Ast_Literal *)node;
       printf("%lli", n->value);
       break;
     }
 
     case NODE_BINARY_OP: {
-      Ast_Binary_Op *n = node;
+      Ast_Binary_Op *n = (Ast_Binary_Op *)node;
       printf("(");
       print_ast_node(n->first);
       switch(n->operator) {
@@ -172,7 +185,7 @@ void print_ast_node(Ast_Node *node) {
 
 
     case NODE_UNARY_OP: {
-      Ast_Unary_Op *n = node;
+      Ast_Unary_Op *n = (Ast_Unary_Op *)node;
       switch(n->operator) {
         case OPNEGATE: printf("-"); break;
         case OPREFERENCE: printf("&"); break;
@@ -189,13 +202,13 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_SYMBOL: {
-      Ast_Symbol *n = node;
+      Ast_Symbol *n = (Ast_Symbol *)node;
       print_symbol(n->symbol);
       break;
     }
 
     case NODE_IF: {
-      Ast_If *n = node;
+      Ast_If *n = (Ast_If *)node;
       printf("( if ");
       print_ast_node(n->cond);
       printf(" ");
@@ -207,7 +220,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_WHILE: {
-      Ast_While *n = node;
+      Ast_While *n = (Ast_While *)node;
       printf("while ");
       print_ast_node(n->cond);
       printf(" ");
@@ -216,7 +229,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_FUNCTION_CALL: {
-      Ast_Function_Call *n = node;
+      Ast_Function_Call *n = (Ast_Function_Call *)node;
       print_ast_node(n->identifier);
       printf("(");
       for(int i = 0; i < n->arguments.length; i++) {
@@ -228,7 +241,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_TYPED_DECL_SET: {
-      Ast_Typed_Decl_Set *n = node;
+      Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
       print_symbol(n->symbol);
       printf(": ");
       print_ast_node(n->type_node);
@@ -238,7 +251,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_UNTYPED_DECL_SET: {
-      Ast_Untyped_Decl_Set *n = node;
+      Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
       print_symbol(n->symbol);
       printf(" := ");
       print_ast_node(n->value);
@@ -246,7 +259,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_TYPED_DECL: {
-      Ast_Typed_Decl *n = node;
+      Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
       print_symbol(n->symbol);
       printf(": ");
       print_ast_node(n->type_node);
@@ -254,14 +267,14 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_RETURN: {
-      Ast_Return *n = node;
+      Ast_Return *n = (Ast_Return *)node;
       printf("return ");
       print_ast_node(n->value);
       break;
     }
 
     case NODE_FUNCTION_PARAMETER: {
-      Ast_Function_Parameter *n = node;
+      Ast_Function_Parameter *n = (Ast_Function_Parameter *)node;
       print_symbol(n->symbol);
       printf(": ");
       print_ast_node(n->type_node);
@@ -269,7 +282,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_FUNCTION_DEFINITION: {
-      Ast_Function_Definition *n = node;
+      Ast_Function_Definition *n = (Ast_Function_Definition *)node;
       print_symbol(n->symbol);
       printf(" :: fn (");
       for(int i = 0; i < n->parameters.length; i++) {
@@ -284,7 +297,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_STRUCT_DEFINITION: {
-      Ast_Struct_Definition *n = node;
+      Ast_Struct_Definition *n = (Ast_Struct_Definition *)node;
       print_symbol(n->symbol);
       printf(" :: struct {\n");
       print_ast_statement_array(n->members);
@@ -293,7 +306,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_BLOCK: {
-      Ast_Block *n = node;
+      Ast_Block *n = (Ast_Block *)node;
       printf("{\n");
       print_ast_statement_array(n->statements);
       printf("}");
@@ -301,7 +314,7 @@ void print_ast_node(Ast_Node *node) {
     }
 
     case NODE_PRIMITIVE_TYPE: {
-      Ast_Primitive_Type *n = node;
+      Ast_Primitive_Type *n = (Ast_Primitive_Type *)node;
       print_type(n->type);
       break;
     }
@@ -330,22 +343,12 @@ void print_compilation_unit(Compilation_Unit *unit) {
       printf("\n");
       break;
     }
-    case UNIT_FUNCTION_SIGNATURE: {
-      printf("Function signature.\n");
-      break;
-    }
-    case UNIT_STRUCT_BODY: {
-      printf("Struct body:\n");
+    case UNIT_STRUCT: {
+      printf("Struct:\n");
       print_ast_node(unit->node);
       printf("\n");
       break;
-    }
-    case UNIT_STRUCT_MEMBER: {
-      printf("Struct member: ");
-      print_ast_node(unit->node);
-      printf("\n");
-      break;
-    }
+    };
     default: {
       printf("Unknown type of compilation unit.\n");
     }

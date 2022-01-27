@@ -8,6 +8,8 @@
 #include "errors.h"
 #include "symbol_table.h"
 
+#include <llvm-c/Core.h>
+
 typedef enum Type_Type {
   TYPE_UNKNOWN, // type has not yet been inferred
   TYPE_NOTHING,
@@ -19,12 +21,31 @@ typedef enum Type_Type {
   TYPE_UNKNOWN_INT,
   TYPE_BOOL,
 
-  TYPE_STRUCT,
-  TYPE_ARRAY
+  TYPE_STRUCT
 } Type_Type;
+
+typedef struct Type_Info Type_Info;
+typedef struct Ast_Node Ast_Node;
+typedef struct Ast_Struct_Definition Ast_Struct_Definition;
+
+// Type_Infos are uniquely stored in memory, so you can just compare .info pointers to tell if two Types are equal.
+typedef struct Type {
+  int reference_count;
+  Type_Info *info;
+} Type;
+
+typedef struct Struct_Member {
+  symbol symbol;
+  u32 offset; // offset in struct in bytes
+  Type type;
+  Ast_Node *declaration;
+} Struct_Member;
+
+GENERATE_DARRAY_HEADER(Struct_Member, Struct_Member_Array);
 
 typedef struct Type_Info {
   Type_Type type;
+  u32 size;
   union {
     struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_UNKNOWN, 0, {0}}
     s64 unknown_int;
@@ -32,15 +53,14 @@ typedef struct Type_Info {
       bool is_signed;
       u8 width; // including sign bit
     } integer;
-    // let's not do structs yet.
+    struct {
+      Ast_Struct_Definition *definition;
+      Struct_Member_Array members;
+      bool llvm_generated;
+      LLVMTypeRef llvm_type;
+    } struct_;
   } data;
 } Type_Info;
-
-// Type_Infos are uniquely stored in memory, so you can just compare .info pointers to tell if two Types are equal.
-typedef struct Type {
-  int reference_count;
-  Type_Info *info;
-} Type;
 
 Type UNKNOWN_TYPE;
 Type NOTHING_TYPE;
@@ -58,6 +78,7 @@ Type allocate_unknown_int_type(int value);
 Type integer_type_with(bool is_signed, u8 width);
 
 void print_type(Type t);
+u32 size_of_type(Type t);
 
 typedef enum Ast_Node_Type {
   NODE_NULL,
@@ -112,8 +133,7 @@ typedef enum Compilation_Unit_Type {
   // function may reference it's own signature).
   UNIT_FUNCTION_SIGNATURE,
   UNIT_FUNCTION_BODY,
-  UNIT_STRUCT_BODY,
-  UNIT_STRUCT_MEMBER
+  UNIT_STRUCT
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
@@ -131,20 +151,25 @@ typedef struct Compilation_Unit {
   Ast_Node *node;
   Scope *scope;
   union {
-    Compilation_Unit *signature;
-    Compilation_Unit *body;
+    struct {
+      Compilation_Unit *body;
+    } signature;
+    struct {
+      Bytecode_Function *bytecode;
+      Compilation_Unit *signature;
+    } body;
+    struct {
+      Type type;
+    } struct_def;
   } data;
-  union {
-    Bytecode_Function *function;
-  } bytecode;
 } Compilation_Unit;
 
 GENERATE_DARRAY_HEADER(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 
 typedef struct Scope_Entry {
   symbol symbol;
-  u32 register_id;
-  union { // Determined based on the parent Scope object's is_ordered_property
+  u32 register_id; // Only relevant in block scopes
+  union { // Determined based on the parent Scope object's type property
     Ast_Node *node;
     Compilation_Unit *unit;
   } declaration;
@@ -152,8 +177,13 @@ typedef struct Scope_Entry {
 
 GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
 
+typedef enum Scope_Type {
+  BLOCK_SCOPE,
+  FILE_SCOPE
+} Scope_Type;
+
 typedef struct Scope {
-  bool is_ordered;
+  Scope_Type type;
   bool has_parent;
   Scope *parent;
   Scope_Entry_Array entries;
@@ -303,7 +333,6 @@ typedef struct Ast_Struct_Definition {
   Ast_Node n;
   symbol symbol;
   Type type;
-  Scope scope;
   Ast_Node_Ptr_Array members;
 } Ast_Struct_Definition;
 
@@ -318,7 +347,6 @@ Compilation_Unit *allocate_compilation_unit(Compilation_Unit unit);
 
 void print_symbol(symbol symbol);
 void print_ast(Ast ast);
-void print_scope(Scope s);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node *node);
 void print_compilation_unit(Compilation_Unit *unit);
