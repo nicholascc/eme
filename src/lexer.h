@@ -31,10 +31,9 @@ typedef enum Token_Type {
   TAMPERSAND,
 
   TOR,
-  TXOR,
+  TCARET,
   TTILDA,
   TDOUBLE_OR,
-  TDOUBLE_XOR,
   TDOUBLE_AMPERSAND,
   TNOT,
   TDOUBLE_EQUALS,
@@ -56,6 +55,7 @@ typedef enum Token_Type {
   TARROW,
   TSEMICOLON,
   TDOT,
+  TDOT_CARET,
   TCOMMA,
   TDOLLAR_SIGN,
 

@@ -138,16 +138,16 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         break;
       }
       case BC_REF_TO: {
-        u32 reg_a = inst.data.ref_to.reg_a;
-        u32 reg_b = inst.data.ref_to.reg_b;
+        u32 reg_a = inst.data.unary_op.reg_a;
+        u32 reg_b = inst.data.unary_op.reg_b;
         assert(size_of_type(fn.register_types.data[reg_a]) == 8);
         u64 *a = (u64 *)(&local[r_to_id[reg_a]]);
         *a = (u64)(&local[r_to_id[reg_b]]);
         break;
       }
       case BC_GET_MEMBER_PTR: {
-        u32 reg_a = inst.data.ref_to.reg_a;
-        u32 reg_b = inst.data.ref_to.reg_b;
+        u32 reg_a = inst.data.get_member_ptr.reg_a;
+        u32 reg_b = inst.data.get_member_ptr.reg_b;
         Type b_type = fn.register_types.data[reg_b];
 
         u32 member = inst.data.get_member_ptr.member;
@@ -159,16 +159,16 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         break;
       }
       case BC_LOAD: {
-        u32 reg_a = inst.data.ref_to.reg_a;
-        u32 reg_b = inst.data.ref_to.reg_b;
+        u32 reg_a = inst.data.unary_op.reg_a;
+        u32 reg_b = inst.data.unary_op.reg_b;
         u32 a_size = size_of_type(fn.register_types.data[reg_a]);
         u64 b = *((u64 *)&local[r_to_id[reg_b]]);
         memcpy(&local[r_to_id[reg_a]], (u8 *)b, a_size);
         break;
       }
       case BC_STORE: {
-        u32 reg_a = inst.data.ref_to.reg_a;
-        u32 reg_b = inst.data.ref_to.reg_b;
+        u32 reg_a = inst.data.unary_op.reg_a;
+        u32 reg_b = inst.data.unary_op.reg_b;
         u32 b_size = size_of_type(fn.register_types.data[reg_b]);
         u64 a = *((u64 *)&local[r_to_id[reg_a]]);
         memcpy((u8 *)a, &local[r_to_id[reg_b]], b_size);

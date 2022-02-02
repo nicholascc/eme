@@ -56,7 +56,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       break;
     }
     case BC_REF_TO: {
-      printf("ref_to r%i <- r%i\n", inst.data.ref_to.reg_a, inst.data.ref_to.reg_b);
+      printf("ref_to r%i <- r%i\n", inst.data.unary_op.reg_a, inst.data.unary_op.reg_b);
       break;
     }
     case BC_GET_MEMBER_PTR: {
@@ -64,11 +64,11 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       break;
     }
     case BC_LOAD: {
-      printf("load r%i <- r%i\n", inst.data.load.reg_a, inst.data.load.reg_b);
+      printf("load r%i <- r%i\n", inst.data.unary_op.reg_a, inst.data.unary_op.reg_b);
       break;
     }
     case BC_STORE: {
-      printf("store r%i <- r%i\n", inst.data.load.reg_a, inst.data.load.reg_b);
+      printf("store r%i <- r%i\n", inst.data.unary_op.reg_a, inst.data.unary_op.reg_b);
       break;
     }
     case BC_CALL: {
@@ -156,6 +156,15 @@ Bytecode_Block init_bytecode_block() {
 u32 add_block_to_block(Ast_Block *block_node, Bytecode_Function *fn, u32 *block);
 Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope);
 
+u32 add_unary_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u32 a, u32 b) {
+  Bytecode_Instruction inst;
+  inst.type = t;
+  inst.data.unary_op.reg_a = a;
+  inst.data.unary_op.reg_b = b;
+  add_instruction(block, inst);
+  return a;
+}
+
 u32 add_bin_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u32 a, u32 b, u32 c) {
   Bytecode_Instruction inst;
   inst.type = t;
@@ -166,28 +175,50 @@ u32 add_bin_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u
   return a;
 }
 
+// Takes a register containing type ^^^X, ^^X, ^X or X, and converts it to ^X
+// either by referencing or dereferencing it.
+u32 ref_or_deref_to_single_ptr(u32 ptr_reg, u32 *block, Bytecode_Function *fn) {
+  Type ptr_type = fn->register_types.data[ptr_reg];
+  if(ptr_type.reference_count > 0) {
+    while(ptr_type.reference_count > 1) {
+      ptr_type.reference_count--;
+      u32 new_reg = add_register(fn, ptr_type);
+      Bytecode_Instruction inst;
+      inst.type = BC_LOAD;
+      inst.data.unary_op.reg_a = new_reg;
+      inst.data.unary_op.reg_b = ptr_reg;
+      add_instruction(&fn->blocks.data[*block], inst);
+      ptr_reg = new_reg;
+    }
+    return ptr_reg;
+  } else {
+    ptr_type.reference_count++;
+    u32 new_reg = add_register(fn, ptr_type);
+    {
+      Bytecode_Instruction inst;
+      inst.type = BC_REF_TO;
+      inst.data.get_member_ptr.reg_a = new_reg;
+      inst.data.get_member_ptr.reg_b = ptr_reg;
+      add_instruction(&fn->blocks.data[*block], inst);
+    }
+    return new_reg;
+  }
+}
+
 u32 generate_set_expression_ptr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Scope *scope) {
   if(node->type == NODE_BINARY_OP) {
     Ast_Binary_Op *n = (Ast_Binary_Op *)node;
     assert(n->operator == OPSTRUCT_MEMBER);
-    u32 first_reg;
+    u32 first_reg; // this should be a single pointer to a struct.
     if(n->first->type == NODE_SYMBOL) {
       Ast_Symbol *sn = (Ast_Symbol *)n->first;
       Scope_Entry *e = get_entry_of_identifier_block_scope(sn->symbol, scope, sn->n.loc);
-      u32 reg = e->register_id;
-      {
-        Type first_type = fn->register_types.data[reg];
-        first_type.reference_count++;
-        first_reg = add_register(fn, first_type);
-      }
-      {
-        Bytecode_Instruction inst;
-        inst.type = BC_REF_TO;
-        inst.data.get_member_ptr.reg_a = first_reg;
-        inst.data.get_member_ptr.reg_b = reg;
-        add_instruction(&fn->blocks.data[*block], inst);
-      }
-    } else first_reg = generate_set_expression_ptr(n->first, block, fn, scope);
+      u32 struct_reg = e->register_id;
+      first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
+    } else {
+      u32 struct_reg = generate_set_expression_ptr(n->first, block, fn, scope);
+      first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
+    }
 
     Ast_Symbol *s = (Ast_Symbol *)n->second;
 
@@ -257,31 +288,64 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN, BC_LESS_THAN, add_register(fn, BOOL_TYPE))
         // lookup table maybe?
         case OPSET_EQUALS: {
+          u32 value_reg = generate_bytecode_expr(n->second, block, fn, scope);
+          Type value_type = fn->register_types.data[value_reg];
           if(n->first->type == NODE_SYMBOL) {
             Ast_Symbol *sn = (Ast_Symbol *)n->first;
             symbol symbol = sn->symbol;
 
             Scope_Entry *e = get_entry_of_identifier_block_scope(symbol, scope, sn->n.loc);
 
-            u32 reg = e->register_id;
-            u32 value_reg = generate_bytecode_expr(n->second, block, fn, scope);
+            u32 ptr_reg = e->register_id;
+            Type ptr_type = fn->register_types.data[ptr_reg];
+            if(ptr_type.reference_count == value_type.reference_count) {
+              Bytecode_Instruction inst;
+              inst.type = BC_SET;
+              inst.data.set.reg_a = ptr_reg;
+              inst.data.set.reg_b = value_reg;
+              add_instruction(&fn->blocks.data[*block], inst);
+              return value_reg;
+            }
+
+            while(ptr_type.reference_count > value_type.reference_count+1) {
+              Bytecode_Instruction inst;
+              inst.type = BC_LOAD;
+              ptr_type.reference_count--;
+              u32 new_reg = add_register(fn, ptr_type);
+              inst.data.unary_op.reg_a = new_reg;
+              inst.data.unary_op.reg_b = ptr_reg;
+              add_instruction(&fn->blocks.data[*block], inst);
+              ptr_reg = new_reg;
+            }
             Bytecode_Instruction inst;
-            inst.type = BC_SET;
-            inst.data.set.reg_a = reg;
-            inst.data.set.reg_b = value_reg;
+            inst.type = BC_STORE;
+            inst.data.unary_op.reg_a = ptr_reg;
+            inst.data.unary_op.reg_b = value_reg;
             add_instruction(&fn->blocks.data[*block], inst);
             return value_reg;
           } else {
-            u32 value_reg = generate_bytecode_expr(n->second, block, fn, scope);
+            u32 ptr_reg = generate_set_expression_ptr(n->first, block, fn, scope);
+            Type ptr_type = fn->register_types.data[ptr_reg];
+            while(ptr_type.reference_count > value_type.reference_count+1) {
+              Bytecode_Instruction inst;
+              inst.type = BC_LOAD;
+              ptr_type.reference_count--;
+              u32 new_reg = add_register(fn, ptr_type);
+              inst.data.unary_op.reg_a = new_reg;
+              inst.data.unary_op.reg_b = ptr_reg;
+              add_instruction(&fn->blocks.data[*block], inst);
+              ptr_reg = new_reg;
+            }
             Bytecode_Instruction inst;
             inst.type = BC_STORE;
-            inst.data.store.reg_a = generate_set_expression_ptr(n->first, block, fn, scope);
-            inst.data.store.reg_b = value_reg;
+            inst.data.unary_op.reg_a = ptr_reg;
+            inst.data.unary_op.reg_b = value_reg;
             add_instruction(&fn->blocks.data[*block], inst);
             return value_reg;
           }
         }
-        case OPSTRUCT_MEMBER: {
+        case OPSTRUCT_MEMBER:
+        case OPSTRUCT_MEMBER_REF: {
           Ast_Symbol *s = (Ast_Symbol *)n->second;
           assert(s->n.type == NODE_SYMBOL);
 
@@ -289,16 +353,8 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
 
           Type struct_type = fn->register_types.data[struct_reg];
           assert(struct_type.info->type == TYPE_STRUCT);
-          Type struct_ptr_type = struct_type;
-          struct_ptr_type.reference_count++;
-          u32 struct_ptr_reg = add_register(fn, struct_ptr_type);
-          {
-            Bytecode_Instruction inst;
-            inst.type = BC_REF_TO;
-            inst.data.get_member_ptr.reg_a = struct_ptr_reg;
-            inst.data.get_member_ptr.reg_b = struct_reg;
-            add_instruction(&fn->blocks.data[*block], inst);
-          }
+
+          u32 struct_ptr_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
 
           Type result_type;
           u32 member;
@@ -328,15 +384,19 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
             inst.data.get_member_ptr.member = member;
             add_instruction(&fn->blocks.data[*block], inst);
           }
-          u32 result_reg = add_register(fn, result_type);
-          {
-            Bytecode_Instruction inst;
-            inst.type = BC_LOAD;
-            inst.data.load.reg_a = result_reg;
-            inst.data.load.reg_b = member_ptr_reg;
-            add_instruction(&fn->blocks.data[*block], inst);
+          if(n->operator == OPSTRUCT_MEMBER_REF) {
+            return member_ptr_reg;
+          } else {
+            u32 result_reg = add_register(fn, result_type);
+            {
+              Bytecode_Instruction inst;
+              inst.type = BC_LOAD;
+              inst.data.unary_op.reg_a = result_reg;
+              inst.data.unary_op.reg_b = member_ptr_reg;
+              add_instruction(&fn->blocks.data[*block], inst);
+            }
+            return result_reg;
           }
-          return result_reg;
         }
         default: {
           print_error_message("Internal compiler error: I cannot generate bytecode for this node.", node->loc);
@@ -344,6 +404,34 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         }
       }
 
+    }
+    case NODE_UNARY_OP: {
+      Ast_Unary_Op *n = (Ast_Unary_Op *)node;
+      switch(n->operator) {
+        case OPREFERENCE: {
+          u32 reg_b = generate_bytecode_expr(n->operand, block, fn, scope);
+          Type result_type = fn->register_types.data[reg_b];
+          result_type.reference_count++;
+          u32 result_reg = add_register(fn, result_type);
+          return add_unary_op_instruction(&fn->blocks.data[*block], BC_REF_TO,
+                                          result_reg,
+                                          reg_b);
+        }
+        case OPDEREFERENCE: {
+          u32 reg_b = generate_bytecode_expr(n->operand, block, fn, scope);
+          Type result_type = fn->register_types.data[reg_b];
+          assert(result_type.reference_count > 0);
+          result_type.reference_count--;
+          u32 result_reg = add_register(fn, result_type);
+          return add_unary_op_instruction(&fn->blocks.data[*block], BC_LOAD,
+                                          result_reg,
+                                          reg_b);
+        }
+        default: {
+          print_error_message("Internal compiler error: I cannot generate bytecode for this node.", node->loc);
+          exit(1);
+        }
+      }
     }
     case NODE_SYMBOL: {
       Ast_Symbol *n = (Ast_Symbol *)node;
@@ -508,7 +596,6 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_NULL: {
       return -1;
     }
-    case NODE_UNARY_OP:
     case NODE_FUNCTION_DEFINITION:
     case NODE_PRIMITIVE_TYPE:
     default: {

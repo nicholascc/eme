@@ -222,6 +222,7 @@ typedef enum Ast_Binary_Op_Type {
   OPGREATER_THAN_OR_EQUAL_TO,
 
   OPSTRUCT_MEMBER,
+  OPSTRUCT_MEMBER_REF,
   OPSUBSCRIPT,
 
   OPTEST_EQUALS
@@ -237,19 +238,20 @@ typedef struct Ast_Binary_Op {
 
 typedef enum Ast_Unary_Op_Type {
   OPNEGATE,
-  OPREFERENCE,
-  OPDEREFERENCE,
   OPPLUS_PLUS_FIRST,
   OPPLUS_PLUS_SECOND,
   OPMINUS_MINUS_FIRST,
-  OPMINUS_MINUS_SECOND
+  OPMINUS_MINUS_SECOND,
+  OPREFERENCE,
+  OPDEREFERENCE,
+
+  OPREF_TYPE
 } Ast_Unary_Op_Type;
 
 typedef struct Ast_Unary_Op {
   Ast_Node n;
   Ast_Unary_Op_Type operator;
   Ast_Node *operand;
-  Type type;
 } Ast_Unary_Op;
 
 typedef struct Ast_If {

@@ -31,7 +31,12 @@ LLVMTypeRef llvm_type_of(Type type) {
       type.info->data.struct_.llvm_type = LLVMStructType(element_types, element_count, false);
       type.info->data.struct_.llvm_generated = true;
       return type.info->data.struct_.llvm_type;
-    } else assert(false);
+    } else {
+      printf("Cannot convert this type to LLVM: ");
+      print_type(type);
+      printf("\n");
+      exit(1);
+    }
   }
 }
 
@@ -187,10 +192,10 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
 
         case BC_REF_TO: {
-          Type a_type = fn.register_types.data[inst.data.ref_to.reg_a];
-          Type b_type = fn.register_types.data[inst.data.ref_to.reg_b];
+          Type a_type = fn.register_types.data[inst.data.unary_op.reg_a];
+          Type b_type = fn.register_types.data[inst.data.unary_op.reg_b];
           assert(b_type.reference_count+1 == a_type.reference_count);
-          LLVMValueRef b_ptr = r[inst.data.ref_to.reg_b];
+          LLVMValueRef b_ptr = r[inst.data.unary_op.reg_b];
           LLVMBuildStore(builder, b_ptr, r[inst.data.bin_op.reg_a]);
           break;
         }
@@ -209,26 +214,26 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
 
         case BC_LOAD: {
-          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.set.reg_b], "");
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.unary_op.reg_b], "");
           LLVMValueRef a = LLVMBuildLoad(builder, b, "");
           {
-            Type a_type = fn.register_types.data[inst.data.set.reg_a];
-            Type b_type = fn.register_types.data[inst.data.set.reg_b];
+            Type a_type = fn.register_types.data[inst.data.unary_op.reg_a];
+            Type b_type = fn.register_types.data[inst.data.unary_op.reg_b];
             b_type.reference_count--;
             a = generate_llvm_cast(builder, a, a_type, b_type);
           }
-          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
+          LLVMBuildStore(builder, a, r[inst.data.unary_op.reg_a]);
           break;
         }
         case BC_STORE: {
-          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.set.reg_b], "");
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.unary_op.reg_b], "");
           {
-            Type a_type = fn.register_types.data[inst.data.set.reg_a];
-            Type b_type = fn.register_types.data[inst.data.set.reg_b];
+            Type a_type = fn.register_types.data[inst.data.unary_op.reg_a];
+            Type b_type = fn.register_types.data[inst.data.unary_op.reg_b];
             a_type.reference_count--;
             b = generate_llvm_cast(builder, b, b_type, a_type);
           }
-          LLVMValueRef a_ptr = LLVMBuildLoad(builder, r[inst.data.set.reg_a], "");
+          LLVMValueRef a_ptr = LLVMBuildLoad(builder, r[inst.data.unary_op.reg_a], "");
           LLVMBuildStore(builder, b, a_ptr);
           break;
         }

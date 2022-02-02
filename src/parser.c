@@ -20,19 +20,19 @@ void parse_error(char *message, Location loc, bool should_exit_now) {
 }
 
 void error_unexpected_token(Token t) {
-  parse_error("The parser did not expect to encounter this token.", t.loc, true);
+  parse_error("I did not expect to encounter this token.", t.loc, true);
 }
 
 void expect_and_eat_semicolon(Token_Reader *r) { // WARNING: will call save_state!
   save_state(r);
   Token semicolon = peek_token(r);
   if(semicolon.type != TSEMICOLON) {
-    parse_error("The parser did not expect to encounter this token. You might be missing a semicolon.", semicolon.loc, false);
+    parse_error("I did not expect to encounter this token. You might be missing a semicolon.", semicolon.loc, false);
     revert_state(r);
   }
 }
 
-bool is_non_unary_operator(Token t) {
+bool is_infix_operator(Token t) {
   switch(t.type) {
     case TPLUS:
     case TMINUS:
@@ -48,6 +48,7 @@ bool is_non_unary_operator(Token t) {
     case TGREATER_THAN:
     case TGREATER_THAN_OR_EQUAL_TO:
     case TDOT:
+    case TDOT_CARET:
     case TQUESTION_MARK:
       return true;
     default: return false;
@@ -58,7 +59,7 @@ bool is_prefix_operator(Token t) {
   switch(t.type) {
     case TMINUS:
     case TASTERISK:
-    case TAMPERSAND:
+    case TCARET:
     case TDOUBLE_PLUS:
     case TDOUBLE_MINUS:
       return true;
@@ -106,6 +107,7 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TGREATER_THAN: ast_op = OPGREATER_THAN; break;
     case TGREATER_THAN_OR_EQUAL_TO: ast_op = OPGREATER_THAN_OR_EQUAL_TO; break;
     case TDOT: ast_op = OPSTRUCT_MEMBER; break;
+    case TDOT_CARET: ast_op = OPSTRUCT_MEMBER_REF; break;
     case TOPEN_BRACKET: ast_op = OPSUBSCRIPT; break;
   }
 
@@ -124,7 +126,7 @@ Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
   switch(operator.type) {
     case TMINUS: ast_op = OPNEGATE; break;
     case TASTERISK: ast_op = OPDEREFERENCE; break;
-    case TAMPERSAND: ast_op = OPREFERENCE; break;
+    case TCARET: ast_op = OPREFERENCE; break;
     case TDOUBLE_PLUS:
       if(prefix) ast_op = OPPLUS_PLUS_FIRST;
       else ast_op = OPPLUS_PLUS_SECOND;
@@ -218,6 +220,7 @@ u8_pair binary_op_binding_power(Token_Type type) {
       return (u8_pair){25,26};
 
     case TDOT:
+    case TDOT_CARET:
       return (u8_pair){49,50};
     default: assert(false && "(internal compiler error) binary op does not exist");
   }
@@ -227,7 +230,7 @@ u8 prefix_op_binding_power(Token_Type type) {
   switch(type) {
     case TMINUS:
     case TASTERISK:
-    case TAMPERSAND:
+    case TCARET:
     case TDOUBLE_PLUS:
     case TDOUBLE_MINUS:
       return 40;
@@ -309,7 +312,7 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
     save_state(r);
     Token op = peek_token(r);
 
-    if(is_non_unary_operator(op)) {
+    if(is_infix_operator(op)) {
       u8_pair powers = binary_op_binding_power(op.type);
       if(powers.left < min_power) {
         revert_state(r);
@@ -416,20 +419,28 @@ void register_parser_symbols() {
 
 Ast_Node *parse_type(Token_Reader *r, Scope *scope) {
   Token t = peek_token(r);
-  if(t.type != TSYMBOL) error_unexpected_token(t);
-
-  for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
-    if(t.data.symbol == symbol_integers[i].sym) {
-      Ast_Primitive_Type *n = (Ast_Primitive_Type *)allocate_ast_node(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
-      n->n.loc = t.loc;
-      n->type = symbol_integers[i].type;
-      return (Ast_Node *)n;
+  if(t.type == TSYMBOL) {
+    for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
+      if(t.data.symbol == symbol_integers[i].sym) {
+        Ast_Primitive_Type *n = (Ast_Primitive_Type *)allocate_ast_node(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
+        n->n.loc = t.loc;
+        n->type = symbol_integers[i].type;
+        return (Ast_Node *)n;
+      }
     }
-  }
-  Ast_Symbol *n = (Ast_Symbol *)allocate_ast_node(NODE_SYMBOL, sizeof(Ast_Symbol));
-  n->n.loc = t.loc;
-  n->symbol = t.data.symbol;
-  return (Ast_Node *)n;
+    Ast_Symbol *n = (Ast_Symbol *)allocate_ast_node(NODE_SYMBOL, sizeof(Ast_Symbol));
+    n->n.loc = t.loc;
+    n->symbol = t.data.symbol;
+    return (Ast_Node *)n;
+  } else if(t.type == TCARET) {
+    Ast_Node *operand = parse_type(r, scope);
+    Ast_Unary_Op *n = (Ast_Unary_Op *)allocate_ast_node(NODE_UNARY_OP, sizeof(Ast_Unary_Op));
+    n->n.loc = t.loc;
+    n->operator = OPREF_TYPE;
+    n->operand = operand;
+    return (Ast_Node *)n;
+  } else error_unexpected_token(t);
+
 }
 
 // parses definitions, expressions, statements, declarations, blocks, etc.
@@ -703,10 +714,18 @@ Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location
     }
   }
 
+  save_state(r);
   Token arrow = peek_token(r);
-  if(arrow.type != TARROW) parse_error("Unexpected token, expected '->'.", arrow.loc, true);
-
-  Ast_Node *return_type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use the arguments (at least for now...)
+  Ast_Node *return_type;
+  if(arrow.type == TARROW) {
+    return_type = parse_type(r, scope); // we are using the parent scope here because this should be not be able to use the arguments (at least for now...)
+  } else if(arrow.type == TOPEN_BRACE) {
+    revert_state(r);
+    Ast_Primitive_Type *type_node = (Ast_Primitive_Type *)allocate_ast_node(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
+    type_node->n.loc = open_paren.loc;
+    type_node->type = NOTHING_TYPE;
+    return_type = (Ast_Node *)type_node;
+  } else parse_error("Unexpected token, expected '->' or '{'.", arrow.loc, true);
   Ast_Node *body = parse_block(r, &n->scope);
 
 

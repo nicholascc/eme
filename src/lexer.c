@@ -51,10 +51,9 @@ void print_token(Token t) {
     case TAMPERSAND:     printf("&"); break;
 
     case TOR:               printf("|"); break;
-    case TXOR:              printf("^"); break;
+    case TCARET:              printf("^"); break;
     case TTILDA:            printf("~"); break;
     case TDOUBLE_OR:        printf("||"); break;
-    case TDOUBLE_XOR:       printf("^^"); break;
     case TDOUBLE_AMPERSAND: printf("&&"); break;
     case TNOT:              printf("!"); break;
 
@@ -75,6 +74,7 @@ void print_token(Token t) {
     case TARROW:         printf("->"); break;
     case TSEMICOLON:     printf(";"); break;
     case TDOT:           printf("."); break;
+    case TDOT_CARET:     printf(".^"); break;
     case TCOMMA:         printf(","); break;
     case TDOLLAR_SIGN:   printf("$"); break;
 
@@ -347,15 +347,7 @@ Token_Array lex_string(char *to_lex, int file_id) {
                     t.type = TOR;
                     break;
                   }
-        case '^': if(next_c == '^') {
-                    t.type = TDOUBLE_XOR;
-                    i++;
-                    loc.character++;
-                    break;
-                  } else {
-                    t.type = TXOR;
-                    break;
-                  }
+        case '^': t.type = TCARET; break;
         case '~': t.type = TTILDA; break;
         case '!': if(next_c == '=') {
                     t.type = TNOT_EQUALS;
@@ -409,7 +401,15 @@ Token_Array lex_string(char *to_lex, int file_id) {
                   }
 
         case ';': t.type = TSEMICOLON; break;
-        case '.': t.type = TDOT; break;
+        case '.': if(next_c == '^') {
+                    t.type = TDOT_CARET;
+                    i++;
+                    loc.character++;
+                    break;
+                  } else {
+                    t.type = TDOT;
+                    break;
+                  }
         case ',': t.type = TCOMMA; break;
         case '$': t.type = TDOLLAR_SIGN; break;
 

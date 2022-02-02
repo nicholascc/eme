@@ -87,8 +87,6 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  print_bytecode_function(main);
-  
   printf("RETURNED: %lli\n", *((s64 *)interpret_bytecode_function(main, NULL)));
 
   if(compilation_has_errors) {

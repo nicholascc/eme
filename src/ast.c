@@ -171,6 +171,7 @@ void print_ast_node(Ast_Node *node) {
         case OPGREATER_THAN_OR_EQUAL_TO: printf(" >= "); break;
 
         case OPSTRUCT_MEMBER: printf("."); break;
+        case OPSTRUCT_MEMBER_REF: printf(".^"); break;
         case OPSUBSCRIPT: printf("["); break;
 
         case OPTEST_EQUALS: printf(" == "); break;
@@ -188,10 +189,11 @@ void print_ast_node(Ast_Node *node) {
       Ast_Unary_Op *n = (Ast_Unary_Op *)node;
       switch(n->operator) {
         case OPNEGATE: printf("-"); break;
-        case OPREFERENCE: printf("&"); break;
+        case OPREFERENCE: printf("^"); break;
         case OPDEREFERENCE: printf("*"); break;
         case OPPLUS_PLUS_FIRST: printf("++"); break;
         case OPMINUS_MINUS_FIRST: printf("--"); break;
+        case OPREF_TYPE: printf("^"); break;
       }
       print_ast_node(n->operand);
       switch(n->operator) {

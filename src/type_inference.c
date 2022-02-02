@@ -33,36 +33,42 @@ s64 s64_abs(s64 x) {
   return x > 0 ? x : -x;
 }
 
-bool can_implicitly_cast(Type before, Type after) {
-  if(type_equals(before, after)) return true;
-  else if(after.info->type == TYPE_POISON) return true;
-  else if(before.info->type == TYPE_INT && after.info->type == TYPE_INT) {
-    if(before.info->data.integer.width == after.info->data.integer.width &&
-       before.info->data.integer.is_signed == after.info->data.integer.is_signed)
+bool can_implicitly_cast_type_info(Type_Info *before, Type_Info *after) {
+  if(before == after) return true;
+  else if(after->type == TYPE_POISON) return true;
+  else if(before->type == TYPE_INT && after->type == TYPE_INT) {
+    if(before->data.integer.width == after->data.integer.width &&
+       before->data.integer.is_signed == after->data.integer.is_signed)
       return true;
-    else if(before.info->data.integer.is_signed && !after.info->data.integer.is_signed)
+    else if(before->data.integer.is_signed && !after->data.integer.is_signed)
       return false;
-    else if(before.info->data.integer.width >= after.info->data.integer.width)
+    else if(before->data.integer.width >= after->data.integer.width)
       return false;
     else
       return true;
 
-  } else if(before.info->type == TYPE_UNKNOWN_INT && after.info->type == TYPE_INT) {
-    s64 literal = before.info->data.unknown_int;
-    if(!after.info->data.integer.is_signed) {
+  } else if(before->type == TYPE_UNKNOWN_INT && after->type == TYPE_INT) {
+    s64 literal = before->data.unknown_int;
+    if(!after->data.integer.is_signed) {
       if(literal < 0) return false;
-      if(after.info->data.integer.width == 64) return true;
-      return literal < power_of_two(after.info->data.integer.width);
+      if(after->data.integer.width == 64) return true;
+      return literal < power_of_two(after->data.integer.width);
     } else {
-      if(after.info->data.integer.width == 64) return true;
-      return s64_abs(literal) < power_of_two(after.info->data.integer.width-1);
+      if(after->data.integer.width == 64) return true;
+      return s64_abs(literal) < power_of_two(after->data.integer.width-1);
     }
 
     return true;
-  } else if(before.info->type == TYPE_UNKNOWN_INT && after.info->type == TYPE_UNKNOWN_INT) {
+  } else if(before->type == TYPE_UNKNOWN_INT && after->type == TYPE_UNKNOWN_INT) {
     return true;
   }
   return false;
+}
+
+bool can_implicitly_cast_type(Type before, Type after) {
+  if(before.reference_count != after.reference_count) return false;
+  if(before.info == after.info) return true;
+  return can_implicitly_cast_type_info(before.info, after.info);
 }
 
 Type solidify_type(Type x, Ast_Node node) {
@@ -101,6 +107,16 @@ Type type_of_type_expr(Ast_Node *type_node, Scope *scope, bool *unit_poisoned) {
       type_inference_error("I expected this symbol to refer to a type, but it doesn't.", type_node->loc, unit_poisoned);
       exit(1);
     }
+  } else if(type_node->type == NODE_UNARY_OP) {
+    Ast_Unary_Op *n = (Ast_Unary_Op *)type_node;
+    if(n->operator == OPREF_TYPE) {
+      Type type = type_of_type_expr(n->operand, scope, unit_poisoned);
+      type.reference_count++;
+      return type;
+    } else {
+      type_inference_error("Internal compiler error: I expected a type operator.", type_node->loc, unit_poisoned);
+      exit(1);
+    }
   } else {
     type_inference_error("Internal compiler error: I expected a primitive type.", type_node->loc, unit_poisoned);
     exit(1);
@@ -123,7 +139,7 @@ Type infer_type_of_decl(Ast_Node *decl, Scope *scope, Compilation_Unit *unit, bo
     if(inferred_type.info->type == TYPE_POISON || given_type.info->type == TYPE_POISON) {
       n->type = POISON_TYPE;
       return POISON_TYPE;
-    } else if(can_implicitly_cast(inferred_type, given_type)) {
+    } else if(can_implicitly_cast_type(inferred_type, given_type)) {
       n->type = given_type;
       return given_type;
     } else {
@@ -265,6 +281,27 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
   switch(node->type) {
     case NODE_LITERAL:
       return ((Ast_Literal*)node)->type;
+    case NODE_UNARY_OP: {
+      Ast_Unary_Op *n = (Ast_Unary_Op *)node;
+      switch(n->operator) {
+        case OPREFERENCE:
+        case OPDEREFERENCE: {
+          Type op = infer_type_of_expr(n->operand, scope, unit, true, unit_poisoned);
+          if(op.info->type == TYPE_POISON) return POISON_TYPE;
+          if(n->operator == OPREFERENCE) op.reference_count++;
+          else {
+            if(op.reference_count == 0) {
+              type_inference_error("I cannot dereference a non-pointer type.", n->n.loc, unit_poisoned);
+              return POISON_TYPE;
+            }
+            op.reference_count--;
+          }
+          return op;
+        }
+        default: assert(false);
+      }
+      break;
+    }
     case NODE_BINARY_OP: {
       Ast_Binary_Op *n = (Ast_Binary_Op *)node;
       switch(n->operator) {
@@ -295,11 +332,11 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
             n->convert_to = solidify_type(to, *node);
             return to;
           }
-          if(can_implicitly_cast(first, second)) {
+          if(can_implicitly_cast_type(first, second)) {
             n->convert_to = solidify_type(second, *node);
             return second;
           }
-          if(can_implicitly_cast(second, first)) {
+          if(can_implicitly_cast_type(second, first)) {
             n->convert_to = solidify_type(first, *node);
             return first;
           }
@@ -319,9 +356,9 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           if((first.info->type != TYPE_INT && first.info->type != TYPE_UNKNOWN_INT) ||
              (second.info->type != TYPE_INT && second.info->type != TYPE_UNKNOWN_INT))
             type_inference_error("The operands to a comparison operator must be integers.", node->loc, unit_poisoned);
-          if(can_implicitly_cast(first, second))
+          if(can_implicitly_cast_type(first, second))
             n->convert_to = solidify_type(second, *node);
-          else if(can_implicitly_cast(second, first))
+          else if(can_implicitly_cast_type(second, first))
             n->convert_to = solidify_type(first, *node);
           else {
             error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
@@ -331,7 +368,8 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           return BOOL_TYPE;
         }
 
-        case OPSTRUCT_MEMBER: {
+        case OPSTRUCT_MEMBER:
+        case OPSTRUCT_MEMBER_REF: {
           Type first = infer_type_of_expr(n->first, scope, unit, true, unit_poisoned);
           if(first.info->type == TYPE_POISON) return POISON_TYPE;
           if(first.info->type != TYPE_STRUCT) {
@@ -347,6 +385,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           for(int i = 0; i < members.length; i++) {
             Struct_Member member = members.data[i];
             if(member.symbol == sym) {
+              if(n->operator == OPSTRUCT_MEMBER_REF) member.type.reference_count++;
               return member.type;
             }
           }
@@ -370,8 +409,9 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
             n->convert_to = POISON_TYPE;
             return POISON_TYPE;
           }
-          if(can_implicitly_cast(right, left)) {
+          if(left.reference_count >= right.reference_count && can_implicitly_cast_type_info(right.info, left.info)) {
             n->convert_to = solidify_type(left, *node);
+            n->convert_to.reference_count = 0;
             if(n->convert_to.info->type == TYPE_POISON) *unit_poisoned = true;
             return left;
           }
@@ -401,7 +441,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         return POISON_TYPE;
       }
       Ast_Function_Definition *fn_def = (Ast_Function_Definition *)unit->node;
-      if(!can_implicitly_cast(value, fn_def->return_type)) {
+      if(!can_implicitly_cast_type(value, fn_def->return_type)) {
         error_cannot_implicitly_cast(value, fn_def->return_type, node->loc, false, unit_poisoned);
         return POISON_TYPE;
       }
@@ -416,11 +456,11 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
       Type second = infer_type_of_expr(n->second, scope, unit, using_result, unit_poisoned);
       if(using_result) {
         if(first.info->type == TYPE_POISON || second.info->type == TYPE_POISON) return POISON_TYPE;
-        if(can_implicitly_cast(first, second)) {
+        if(can_implicitly_cast_type(first, second)) {
           n->result_type = second;
           return second;
         }
-        if(can_implicitly_cast(second, first)) {
+        if(can_implicitly_cast_type(second, first)) {
           n->result_type = first;
           return first;
         }
@@ -455,7 +495,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         for(int i = 0; i < n->arguments.length; i++) {
           Type defined = ((Ast_Function_Parameter *)def->parameters.data[i])->type;
           Type passed = infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned);
-          if(!can_implicitly_cast(passed, defined))
+          if(!can_implicitly_cast_type(passed, defined))
             error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
         }
       }
@@ -499,7 +539,7 @@ Type infer_types_of_block(Ast_Node *node_block, Compilation_Unit *unit, bool usi
         Ast_While *n = (Ast_While *)node;
         Type cond = infer_type_of_expr(n->cond, &block->scope, unit, true, unit_poisoned);
 
-        if(!can_implicitly_cast(cond, BOOL_TYPE))
+        if(!can_implicitly_cast_type(cond, BOOL_TYPE))
           error_cannot_implicitly_cast(cond, BOOL_TYPE, n->n.loc, false, unit_poisoned);
 
         Type body = infer_type_of_expr(n->body, &block->scope, unit, false, unit_poisoned);
