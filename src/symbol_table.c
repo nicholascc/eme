@@ -6,17 +6,17 @@
 #include <stdbool.h>
 
 #include "c-utils/integer.h"
-#include "c-utils/darray.h"
+#include "c-utils/table.h"
+#include "c-utils/hash.h"
 
-// @Speed: currently symbol table implementation is a list, meaning looking up an id from a string is very inefficient. In the future I should use hash table or self-organizing list instead.
-GENERATE_DARRAY_HEADER(char *, Symbol_Table);
-GENERATE_DARRAY_CODE(char *, Symbol_Table);
+GENERATE_TABLE_HEADER(char *, String_Table);
+GENERATE_TABLE_CODE(char *, String_Table);
 
 
 
-Symbol_Table table;
+String_Table table;
 void st_init() { // called at start of program
-  table = init_Symbol_Table(1024);
+  table = init_String_Table(1024);
 }
 
 // these two function are a black-box for storing strings permanently until the symbol table itself is freed.
@@ -35,59 +35,24 @@ void free_symbol_memory(char *str) {
 
 
 symbol st_get_id_of(char *str, int length) {
-  for(u64 i = 0; i < table.length; i++) {
-    char *entry = table.data[i];
-    bool match = true;
-    for(int j = 0; ; j++) {
-      if(entry[j] == 0) {
-        if(j != length) match = false;
-        break;
-      }
-      if(entry[j] != str[j]) {
-        match = false;
-        break;
-      }
-    }
-    if(match) return entry;
+  u64 hash;
+  if (length < 0) hash = hash_string_nullterm(str);  // string is null terminated
+  else hash = hash_string(str, length);
+
+  char **val = put_and_get_ptr_String_Table(&table, hash);
+  if(*val != NULL) return hash;
+
+  if(length < 0) { // string is null terminated
+    for(length = 0; str[length]; length++);
   }
 
-  char *entry = malloc(length+1);
-  assert(entry != NULL && "malloc failed");
-  memcpy(entry, str, length);
-  entry[length] = 0;
-  Symbol_Table_push(&table, entry);
-
-  return entry;
+  *val = copy_to_symbol_memory(str, length);
+  return hash;
 }
 
-symbol st_get_id_of_null_terminated(char *str) {
-  for(u64 i = 0; i < table.length; i++) {
-    char *entry = table.data[i];
-    bool match = true;
-    for(int j = 0; ; j++) {
-      if(entry[j] == 0 || str[j] == 0) {
-        if(entry[j] != 0 || str[j] != 0) match = false;
-        break;
-      }
-      if(entry[j] != str[j]) {
-        match = false;
-        break;
-      }
-    }
-    if(match) return entry;
-  }
-
-  int length;
-  for(length = 0; str[length]; length++);
-  
-  char *entry = malloc(length+1);
-  assert(entry != NULL && "malloc failed");
-  memcpy(entry, str, length+1);
-  Symbol_Table_push(&table, entry);
-
-  return entry;
-}
-
-char *st_get_str_of(symbol id) {
- return id;
+char *st_get_str_of(symbol sym) {
+  u64 hash = sym;
+  char **val = put_and_get_ptr_String_Table(&table, hash);
+  assert(*val != NULL);
+  return *val;
 }

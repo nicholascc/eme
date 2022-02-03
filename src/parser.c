@@ -398,21 +398,21 @@ typedef struct Symbol_Integer_Pair {
 
 int SYMBOL_INTEGERS_COUNT = 10;
 Symbol_Integer_Pair symbol_integers[] =
-  {{"u8", NULL, 8, false, {0,NULL}},
-   {"u16", NULL, 16, false, {0,NULL}},
-   {"u32", NULL, 32, false, {0,NULL}},
-   {"u64", NULL, 64, false, {0,NULL}},
-   {"s8", NULL, 8, true, {0,NULL}},
-   {"s16", NULL, 16, true, {0,NULL}},
-   {"s32", NULL, 32, true, {0,NULL}},
-   {"s64", NULL, 64, true, {0,NULL}},
-   {"uint", NULL, 64, false, {0,NULL}},
-   {"int", NULL, 64, true, {0,NULL}}};
+  {{"u8", NULL_SYMBOL, 8, false, {0,NULL}},
+   {"u16", NULL_SYMBOL, 16, false, {0,NULL}},
+   {"u32", NULL_SYMBOL, 32, false, {0,NULL}},
+   {"u64", NULL_SYMBOL, 64, false, {0,NULL}},
+   {"s8", NULL_SYMBOL, 8, true, {0,NULL}},
+   {"s16", NULL_SYMBOL, 16, true, {0,NULL}},
+   {"s32", NULL_SYMBOL, 32, true, {0,NULL}},
+   {"s64", NULL_SYMBOL, 64, true, {0,NULL}},
+   {"uint", NULL_SYMBOL, 64, false, {0,NULL}},
+   {"int", NULL_SYMBOL, 64, true, {0,NULL}}};
 
 
 void register_parser_symbols() {
   for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
-    symbol_integers[i].sym = st_get_id_of_null_terminated((char *)symbol_integers[i].str);
+    symbol_integers[i].sym = st_get_id_of((char *)symbol_integers[i].str, -1);
     symbol_integers[i].type = integer_type_with(symbol_integers[i].is_signed, symbol_integers[i].width);;
   }
 }

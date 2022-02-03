@@ -19,7 +19,7 @@ void print_token(Token t) {
     printf("EOL\n");
     return;
   } else if(t.type == TSYMBOL) {
-    printf("SYM(%s)\n",t.data.symbol);
+    printf("SYM(%s)\n", st_get_str_of(t.data.symbol));
     return;
   } else if(t.type == TLITERAL_INT) {
     printf("LITERAL_INT(%i)\n", t.data.literal_int);
