@@ -41,13 +41,13 @@ void free_##TABLE_NAME(TABLE_NAME* table) { \
   table->entries = NULL; \
 } \
 TABLE_NAME##_Entry *find_entry_##TABLE_NAME(TABLE_NAME *table, u64 key) { \
-  u32 index = key % table->capacity; \
+  u32 index = key & (table->capacity-1); \
   while(true) { \
     TABLE_NAME##_Entry* entry = &table->entries[index]; \
     if (entry->key == key || entry->key == 0) { \
       return entry; \
     } \
-    index = (index + 1) % table->capacity; \
+    index = (index + 1) & (table->capacity-1); \
   } \
 } \
 void allocate_##TABLE_NAME(TABLE_NAME *table, u32 capacity) { \
@@ -72,7 +72,7 @@ void add_all_##TABLE_NAME(TABLE_NAME *from, TABLE_NAME *to) { \
 } \
 bool set_##TABLE_NAME(TABLE_NAME *table, u64 key, VALUE_TYPE value) { \
   if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) { \
-    int capacity = table->capacity < 8 ? 8 : table->capacity + table->capacity/2; \
+    int capacity = table->capacity < 8 ? 8 : table->capacity*2; \
     expand_##TABLE_NAME(table, capacity); \
   } \
   TABLE_NAME##_Entry *entry = find_entry_##TABLE_NAME(table, key); \
@@ -94,7 +94,7 @@ bool get_##TABLE_NAME(TABLE_NAME *table, u64 key, VALUE_TYPE *value) { \
 } \
 VALUE_TYPE *put_and_get_ptr_##TABLE_NAME(TABLE_NAME *table, u64 key) {\
   if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) { \
-    int capacity = table->capacity < 8 ? 8 : table->capacity + table->capacity/2; \
+    int capacity = table->capacity < 8 ? 8 : table->capacity*2; \
     expand_##TABLE_NAME(table, capacity); \
   } \
   TABLE_NAME##_Entry* entry = find_entry_##TABLE_NAME(table, key); \

@@ -43,7 +43,7 @@ The macro is called usig the type of the value stored in the table, and a name f
 ```c
 typedef struct TABLE_NAME {
   u32 count; // The amount of elements currently stored in the table.
-  u32 capacity; // The current capacity of the table.
+  u32 capacity; // The current capacity of the table. Must always be a power of two.
                 // After initialization this will be 0, since memory is only
                 // allocated once the table has elements.
   TABLE_NAME_Entry *entries;
@@ -51,8 +51,8 @@ typedef struct TABLE_NAME {
 
 TABLE_NAME init_TABLE_NAME(); // Makes a new table.
 void free_TABLE_NAME(TABLE_NAME *table); // Frees a table.
-void expand_TABLE_NAME(TABLE_NAME *table, u32 capacity); // Expands a table to a new, larger capacity.
-void allocate_TABLE_NAME(TABLE_NAME *table, u32 capacity); // Actually allocates the table.
+void expand_TABLE_NAME(TABLE_NAME *table, u32 capacity); // Expands a table to a new, larger capacity. capacity must be a power of two.
+void allocate_TABLE_NAME(TABLE_NAME *table, u32 capacity); // Actually allocates the table. capacity must be a power of two.
 bool get_TABLE_NAME(TABLE_NAME *table, u64 key, VALUE_TYPE *value); // Gets a value from the table, and returns false if no value is found.
 bool set_TABLE_NAME(TABLE_NAME *table, u64 key, VALUE_TYPE value); // Sets a value in the table, and returns true if the value has not been set before.
 VALUE_TYPE *put_and_get_ptr_TABLE_NAME(TABLE_NAME *table, u64 key); // Adds an entry with key 'key' to the table, and returns a pointer to the value associated with that entry.
