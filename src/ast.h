@@ -27,6 +27,7 @@ typedef enum Type_Type {
 typedef struct Type_Info Type_Info;
 typedef struct Ast_Node Ast_Node;
 typedef struct Ast_Struct_Definition Ast_Struct_Definition;
+typedef struct Compilation_Unit Compilation_Unit;
 
 // Type_Infos are uniquely stored in memory, so you can just compare .info pointers to tell if two Types are equal.
 typedef struct Type {
@@ -36,16 +37,19 @@ typedef struct Type {
 
 typedef struct Struct_Member {
   symbol symbol;
-  u32 offset; // offset in struct in bytes
-  Type type;
-  Ast_Node *declaration;
+  s32 offset; // offset in struct in bytes. Set to -1 before the struct is sized.
+  Compilation_Unit *unit;
 } Struct_Member;
 
 GENERATE_DARRAY_HEADER(Struct_Member, Struct_Member_Array);
 
 typedef struct Type_Info {
   Type_Type type;
-  u32 size;
+  s32 size; // For types like structs, unknown until size_of_type() is called
+            // -1 indicates the size is unknown.
+            // This is because structs do not directly know the type of their
+            // members at type inference (because a struct could contain a ptr
+            // to itself!)
   union {
     struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_UNKNOWN, 0, {0}}
     s64 unknown_int;
@@ -58,6 +62,7 @@ typedef struct Type_Info {
       Struct_Member_Array members;
       bool llvm_generated;
       LLVMTypeRef llvm_type;
+      symbol name;
     } struct_;
   } data;
 } Type_Info;
@@ -78,7 +83,7 @@ Type allocate_unknown_int_type(int value);
 Type integer_type_with(bool is_signed, u8 width);
 
 void print_type(Type t);
-u32 size_of_type(Type t);
+u32 size_of_type(Type t); // Also computes the size of a struct if that size is unknown.
 
 typedef enum Ast_Node_Type {
   NODE_NULL,
@@ -133,7 +138,8 @@ typedef enum Compilation_Unit_Type {
   // function may reference it's own signature).
   UNIT_FUNCTION_SIGNATURE,
   UNIT_FUNCTION_BODY,
-  UNIT_STRUCT
+  UNIT_STRUCT,
+  UNIT_STRUCT_MEMBER
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
@@ -143,24 +149,30 @@ typedef struct Compilation_Unit {
   Compilation_Unit_Type type;
   bool type_inferred;
   bool type_inference_seen; // used to detect circular dependencies
-  bool bytecode_generated;
+  bool bytecode_generated; // meaningless for structs and struct members
   bool bytecode_generating; // used to not fall into an infinite recursion while
-                            //generating bytecode for recursive functions.
+                            // generating bytecode for recursive functions.
   bool poisoned;
 
   Ast_Node *node;
-  Scope *scope;
   union {
     struct {
       Compilation_Unit *body;
+      Scope *scope;
     } signature;
     struct {
       Bytecode_Function *bytecode;
       Compilation_Unit *signature;
+      Scope *scope;
     } body;
     struct {
       Type type;
+      Scope *scope;
     } struct_def;
+    struct {
+      Type type;
+      Scope *scope;
+    } struct_member;
   } data;
 } Compilation_Unit;
 
@@ -335,7 +347,7 @@ typedef struct Ast_Struct_Definition {
   Ast_Node n;
   symbol symbol;
   Type type;
-  Ast_Node_Ptr_Array members;
+  Compilation_Unit_Ptr_Array members;
 } Ast_Struct_Definition;
 
 typedef struct Ast_Return {

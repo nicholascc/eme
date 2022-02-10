@@ -23,13 +23,14 @@ LLVMTypeRef llvm_type_of(Type type) {
       return LLVMIntType(1);
     } else if(type.info->type == TYPE_STRUCT) {
       if(type.info->data.struct_.llvm_generated) return type.info->data.struct_.llvm_type;
+      type.info->data.struct_.llvm_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), st_get_str_of(type.info->data.struct_.name));
+      type.info->data.struct_.llvm_generated = true;
       u32 element_count = type.info->data.struct_.members.length;
       LLVMTypeRef *element_types = malloc(sizeof(LLVMTypeRef) * element_count);
       for(int i = 0; i < element_count; i++) {
-        element_types[i] = llvm_type_of(type.info->data.struct_.members.data[i].type);
+        element_types[i] = llvm_type_of(type.info->data.struct_.members.data[i].unit->data.struct_member.type);
       }
-      type.info->data.struct_.llvm_type = LLVMStructType(element_types, element_count, false);
-      type.info->data.struct_.llvm_generated = true;
+      LLVMStructSetBody(type.info->data.struct_.llvm_type, element_types, element_count, false);
       return type.info->data.struct_.llvm_type;
     } else {
       printf("Cannot convert this type to LLVM: ");

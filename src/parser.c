@@ -570,7 +570,7 @@ Ast *parse_file(Token_Reader *r) {
       sig->bytecode_generating = false;
       sig->poisoned = false;
       sig->node = node;
-      sig->scope = &result->scope;
+      sig->data.signature.scope = &result->scope;
       sig->data.signature.body = body;
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, sig);
 
@@ -581,7 +581,7 @@ Ast *parse_file(Token_Reader *r) {
       body->bytecode_generating = false;
       body->poisoned = false;
       body->node = node;
-      body->scope = &result->scope;
+      body->data.body.scope = &result->scope;
       body->data.body.signature = sig;
       body->data.body.bytecode = malloc(sizeof(Bytecode_Function));
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
@@ -598,7 +598,7 @@ Ast *parse_file(Token_Reader *r) {
       body->bytecode_generating = false;
       body->poisoned = false;
       body->node = node;
-      body->scope = &result->scope;
+      body->data.struct_def.scope = &result->scope;
       body->data.struct_def.type = UNKNOWN_TYPE;
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
 
@@ -744,7 +744,7 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
   result->n.loc = loc;
   result->symbol = identifier;
   result->type = UNKNOWN_TYPE;
-  result->members = init_Ast_Node_Ptr_Array(2);
+  result->members = init_Compilation_Unit_Ptr_Array(2);
 
 
   Token open_brace = peek_token(r);
@@ -765,7 +765,18 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
     assert(node->type == NODE_TYPED_DECL ||
            node->type == NODE_TYPED_DECL_SET);
 
-    Ast_Node_Ptr_Array_push(&result->members, node);
+    Compilation_Unit *unit = allocate_null_compilation_unit();
+    unit->type = UNIT_STRUCT_MEMBER;
+    unit->type_inferred = false;
+    unit->type_inference_seen = false;
+    unit->bytecode_generated = false;
+    unit->bytecode_generating = false;
+    unit->poisoned = false;
+    unit->node = node;
+    unit->data.struct_member.type = UNKNOWN_TYPE;
+    unit->data.struct_member.scope = scope;
+
+    Compilation_Unit_Ptr_Array_push(&result->members, unit);
   }
 
   return (Ast_Node *)result;

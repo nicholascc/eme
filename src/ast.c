@@ -15,10 +15,41 @@ Ast_Node NULL_AST_NODE = {NODE_NULL, {-1,-1,-1}};
 
 u32 size_of_type(Type t) {
   if(t.reference_count > 0) return 8;
-  else return t.info->size;
+  else {
+    Type_Info *info = t.info;
+    if(info->size >= 0) return info->size;
+
+    switch(info->type) {
+      case TYPE_STRUCT: {
+        info->size = 0;
+        for(int i = 0; i < info->data.struct_.members.length; i++) {
+          Struct_Member *member = &info->data.struct_.members.data[i];
+          Compilation_Unit *unit = member->unit;
+          assert(unit->type == UNIT_STRUCT_MEMBER);
+          infer_types_of_compilation_unit(unit);
+          s32 type_size = size_of_type(unit->data.struct_member.type);
+          s32 alignment = alignment_of_size(type_size);
+          if(info->size % alignment != 0) info->size += alignment - info->size % alignment;
+          assert(info->size % alignment == 0);
+          member->offset = info->size;
+
+          info->size += type_size;
+        }
+        break;
+      }
+      case TYPE_INT:
+      case TYPE_UNKNOWN_INT:
+      case TYPE_BOOL:
+      case TYPE_UNKNOWN:
+      case TYPE_NOTHING:
+      case TYPE_POISON:
+      default: assert(false);
+    }
+  }
 }
 
-u32 alignment_of_size(u32 size) {
+s32 alignment_of_size(s32 size) {
+  if(size < 1) assert(false);
   if(size == 1) return 1;
   if(size == 2) return 2;
   if(size <= 4) return 4;
@@ -302,7 +333,9 @@ void print_ast_node(Ast_Node *node) {
       Ast_Struct_Definition *n = (Ast_Struct_Definition *)node;
       print_symbol(n->symbol);
       printf(" :: struct {\n");
-      print_ast_statement_array(n->members);
+      for(int i = 0; i < n->members.length; i++) {
+        print_compilation_unit(n->members.data[i]);
+      }
       printf("}");
       break;
     }

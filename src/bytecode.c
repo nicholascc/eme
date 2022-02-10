@@ -233,7 +233,11 @@ u32 generate_set_expression_ptr(Ast_Node *node, u32 *block, Bytecode_Function *f
       for(int i = 0; i < members.length; i++) {
         if(members.data[i].symbol == s->symbol) {
           found = true;
-          result_type = members.data[i].type;
+          Compilation_Unit *unit = members.data[i].unit;
+          assert(unit->type == UNIT_STRUCT_MEMBER);
+          assert(unit->type_inferred);
+
+          result_type = unit->data.struct_member.type;
           member = i;
         }
       }
@@ -365,7 +369,10 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
             for(int i = 0; i < members.length; i++) {
               if(members.data[i].symbol == s->symbol) {
                 found = true;
-                result_type = members.data[i].type;
+                Compilation_Unit *unit = members.data[i].unit;
+                assert(unit->type == UNIT_STRUCT_MEMBER);
+                infer_types_of_compilation_unit(unit);
+                result_type = unit->data.struct_member.type;
                 member = i;
               }
             }
@@ -681,7 +688,7 @@ void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
     assert(unit->node->type == NODE_FUNCTION_DEFINITION);
     unit->bytecode_generating = true;
     Ast_Function_Definition *fn = (Ast_Function_Definition *)unit->node;
-    generate_bytecode_function(unit->data.body.bytecode, fn, unit->scope);
+    generate_bytecode_function(unit->data.body.bytecode, fn, unit->data.body.scope);
     unit->bytecode_generating = false;
     unit->bytecode_generated = true;
   }

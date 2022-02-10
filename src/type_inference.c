@@ -185,39 +185,23 @@ Type infer_type_of_struct_definition(Ast_Struct_Definition *def, Scope *scope, b
   info->data.struct_.members = init_Struct_Member_Array(2);
   info->data.struct_.definition = def;
   info->data.struct_.llvm_generated = false;
-
-  info->size = 0;
+  info->data.struct_.name = def->symbol;
+  info->size = -1;
 
   for(int i = 0; i < def->members.length; i++) {
-    Ast_Node *node = def->members.data[i];
+    Compilation_Unit *unit = def->members.data[i];
+    Ast_Node *node = unit->node;
     Struct_Member member;
-    member.declaration = node;
+    member.unit = unit;
+    member.offset = -1;
     if(node->type == NODE_TYPED_DECL) {
       Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
-      n->type = type_of_type_expr(n->type_node, scope, unit_poisoned);
       member.symbol = n->symbol;
-      member.type = n->type;
     } else if(node->type == NODE_TYPED_DECL_SET) {
       Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
-      n->type = type_of_type_expr(n->type_node, scope, unit_poisoned);
       member.symbol = n->symbol;
-      member.type = n->type;
     } else assert(false);
 
-    if(member.type.info->type == TYPE_POISON) {
-      *unit_poisoned = true;
-      free(info->data.struct_.members.data);
-      info->type = TYPE_POISON;
-      break;
-    }
-
-    u32 size = size_of_type(member.type);
-    u32 alignment = alignment_of_size(size);
-    if(info->size % alignment != 0) info->size += alignment - info->size % alignment;
-    assert(info->size % alignment == 0);
-    member.offset = info->size;
-
-    info->size += size_of_type(member.type);
     Struct_Member_Array_push(&info->data.struct_.members, member);
   }
 
@@ -385,8 +369,11 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           for(int i = 0; i < members.length; i++) {
             Struct_Member member = members.data[i];
             if(member.symbol == sym) {
-              if(n->operator == OPSTRUCT_MEMBER_REF) member.type.reference_count++;
-              return member.type;
+              Compilation_Unit *unit = member.unit;
+              assert(unit->type == UNIT_STRUCT_MEMBER);
+              infer_types_of_compilation_unit(unit);
+              if(n->operator == OPSTRUCT_MEMBER_REF) unit->data.struct_member.type.reference_count++;
+              return unit->data.struct_member.type;
             }
           }
 
@@ -608,7 +595,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit) {
   unit->type_inference_seen = true;
   switch(unit->type) {
     case UNIT_FUNCTION_SIGNATURE: {
-      if(infer_type_of_function_signature((Ast_Function_Definition *)unit->node, unit->scope, &unit->poisoned).info->type == TYPE_POISON) {
+      if(infer_type_of_function_signature((Ast_Function_Definition *)unit->node, unit->data.signature.scope, &unit->poisoned).info->type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;
@@ -627,8 +614,19 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit) {
       break;
     }
     case UNIT_STRUCT: {
-      Type type = infer_type_of_struct_definition((Ast_Struct_Definition *)unit->node, unit->scope, &unit->poisoned);
+      Type type = infer_type_of_struct_definition((Ast_Struct_Definition *)unit->node, unit->data.struct_def.scope, &unit->poisoned);
       unit->data.struct_def.type = type;
+      break;
+    }
+    case UNIT_STRUCT_MEMBER: {
+      Ast_Node *node = unit->node;
+      if(node->type == NODE_TYPED_DECL) {
+        Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
+        unit->data.struct_member.type = type_of_type_expr(n->type_node, unit->data.struct_member.scope, &unit->poisoned);
+      } else if(node->type == NODE_TYPED_DECL_SET) {
+        Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
+        unit->data.struct_member.type = type_of_type_expr(n->type_node, unit->data.struct_member.scope, &unit->poisoned);
+      } else assert(false);
       break;
     }
     default:
