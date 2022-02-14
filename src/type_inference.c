@@ -186,7 +186,9 @@ Type infer_type_of_struct_definition(Ast_Struct_Definition *def, Scope *scope, b
   info->data.struct_.definition = def;
   info->data.struct_.llvm_generated = false;
   info->data.struct_.name = def->symbol;
-  info->size = -1;
+  info->sized = false;
+  info->sizing_seen = false;
+  info->size = 0;
 
   for(int i = 0; i < def->members.length; i++) {
     Compilation_Unit *unit = def->members.data[i];

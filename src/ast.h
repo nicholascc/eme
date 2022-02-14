@@ -45,11 +45,14 @@ GENERATE_DARRAY_HEADER(Struct_Member, Struct_Member_Array);
 
 typedef struct Type_Info {
   Type_Type type;
-  s32 size; // For types like structs, unknown until size_of_type() is called
-            // -1 indicates the size is unknown.
-            // This is because structs do not directly know the type of their
-            // members at type inference (because a struct could contain a ptr
-            // to itself!)
+  bool sized; // Structs and similar are not sized as soon as they are created;
+              // instead they are sized later so as to correctly detect dependency
+              // loops. A struct containing itself is bad, but a struct containing
+              // a pointer to itself is fine. Because of this relatively subtle
+              // distinction, it's better to detect these dependencies later.
+  bool sizing_seen; // To detect circular dependencies in sizing.
+  u32 size; // Size of type in bytes. Whether this is known is determined by sized.
+            // To actually get this info, use the size_of_type(Type) function.
   union {
     struct {u8 _;} _; // allows the data to be unset in a struct literal like {TYPE_UNKNOWN, 0, {0}}
     s64 unknown_int;

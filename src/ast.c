@@ -17,7 +17,14 @@ u32 size_of_type(Type t) {
   if(t.reference_count > 0) return 8;
   else {
     Type_Info *info = t.info;
-    if(info->size >= 0) return info->size;
+    if(info->sized) return info->size;
+    if(info->sizing_seen) {
+      if(info->type == TYPE_STRUCT) {
+        print_error_message("This struct includes itself as a member or member of a member, which is illegal.", info->data.struct_.definition->n.loc);
+        exit(1);
+      } else assert(false && "non-struct object has circular size dependency");
+    }
+    info->sizing_seen = true;
 
     switch(info->type) {
       case TYPE_STRUCT: {
@@ -45,6 +52,9 @@ u32 size_of_type(Type t) {
       case TYPE_POISON:
       default: assert(false);
     }
+
+    info->sized = true;
+    return info->size;
   }
 }
 
@@ -59,13 +69,13 @@ s32 alignment_of_size(s32 size) {
 void init_primitive_types() {
   Type_Info *infos = malloc(32*sizeof(Type_Info)); // just allocate more space than necessary
   int n = 0;
-  infos[n] = (Type_Info) {TYPE_UNKNOWN, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_UNKNOWN, true, true, 0, {0}};
   UNKNOWN_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_NOTHING, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_NOTHING, true, true, 0, {0}};
   NOTHING_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_POISON, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_POISON, true, true, 0, {0}};
   POISON_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_BOOL, 1, {0}};
+  infos[n] = (Type_Info) {TYPE_BOOL, true, true, 1, {0}};
   BOOL_TYPE = (Type) {0, &infos[n++]};
 
   for(int i = 0; i < 2; i++) {
@@ -79,7 +89,7 @@ void init_primitive_types() {
         case 3: width_bytes = 8; break;
         default: assert(false);
       }
-      infos[n] = (Type_Info) {TYPE_INT, width_bytes, {.integer={is_signed,width_bytes*8}}};
+      infos[n] = (Type_Info) {TYPE_INT, true, true, width_bytes, {.integer={is_signed,width_bytes*8}}};
       INTEGER_TYPES[i][j] = (Type) {0, &infos[n++]};
     }
   }
