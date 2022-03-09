@@ -198,8 +198,8 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
 
         case BC_SET_LITERAL: {
           Type type = fn.register_types.data[inst.data.set_literal.reg_a];
-          assert(type.info->type == TYPE_INT);
-          LLVMValueRef a = LLVMConstInt(LLVMIntType(type.info->data.integer.width), inst.data.set_literal.lit_b, 0);
+          LLVMTypeRef t = llvm_type_of(type);
+          LLVMValueRef a = LLVMConstInt(t, inst.data.set_literal.lit_b, 0);
           LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
           break;
         }

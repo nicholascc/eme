@@ -255,8 +255,13 @@ Token_Array lex_string(char *to_lex, int file_id) {
         t.type = TSTRUCT;
       } else if(len == 5 && 0 == memcmp(symbol_str, "while", 5)) {
         t.type = TWHILE;
+      } else if(len == 4 && 0 == memcmp(symbol_str, "true", 4)) {
+        t.type = TLITERAL_BOOL;
+        t.data.literal_bool = true;
+      } else if(len == 5 && 0 == memcmp(symbol_str, "false", 5)) {
+        t.type = TLITERAL_BOOL;
+        t.data.literal_bool = false;
       } else {
-
         t.data.symbol = st_get_id_of(symbol_str, len);
         t.type = TSYMBOL;
       }

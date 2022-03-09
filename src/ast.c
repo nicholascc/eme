@@ -59,7 +59,11 @@ void print_ast_node(Ast_Node *node) {
 
     case NODE_LITERAL: {
       Ast_Literal *n = (Ast_Literal *)node;
-      printf("%lli", n->value);
+      if(n->type.info->type == TYPE_UNKNOWN_INT)
+        printf("%lli", n->value);
+      else if(n->type.info->type == TYPE_BOOL)
+        printf(n->value ? "true" : "false");
+      else assert(false);
       break;
     }
 
