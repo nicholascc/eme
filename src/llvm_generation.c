@@ -17,21 +17,33 @@ LLVMTypeRef llvm_type_of(Type type) {
   if(type.reference_count > 0) {
     return LLVMPointerType(llvm_type_of((Type){type.reference_count-1, type.info}), 0);
   } else {
-    if(type.info->type == TYPE_INT) {
-      return LLVMIntType(type.info->data.integer.width);
-    } else if(type.info->type == TYPE_BOOL) {
+    Type_Info *info = type.info;
+    if(info->type == TYPE_INT) {
+      return LLVMIntType(info->data.integer.width);
+    } else if(info->type == TYPE_BOOL) {
       return LLVMIntType(1);
-    } else if(type.info->type == TYPE_STRUCT) {
-      if(type.info->data.struct_.llvm_generated) return type.info->data.struct_.llvm_type;
-      type.info->data.struct_.llvm_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), st_get_str_of(type.info->data.struct_.name));
-      type.info->data.struct_.llvm_generated = true;
-      u32 element_count = type.info->data.struct_.members.length;
+    } else if(info->type == TYPE_STRUCT) {
+      if(info->data.struct_.llvm_generated) return info->data.struct_.llvm_type;
+      info->data.struct_.llvm_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), st_get_str_of(info->data.struct_.name));
+      info->data.struct_.llvm_generated = true;
+      u32 element_count = info->data.struct_.members.length;
       LLVMTypeRef *element_types = malloc(sizeof(LLVMTypeRef) * element_count);
       for(int i = 0; i < element_count; i++) {
-        element_types[i] = llvm_type_of(type.info->data.struct_.members.data[i].unit->data.struct_member.type);
+        element_types[i] = llvm_type_of(info->data.struct_.members.data[i]->data.struct_member.type);
       }
-      LLVMStructSetBody(type.info->data.struct_.llvm_type, element_types, element_count, false);
-      return type.info->data.struct_.llvm_type;
+      LLVMStructSetBody(info->data.struct_.llvm_type, element_types, element_count, false);
+      return info->data.struct_.llvm_type;
+    } else if(info->type == TYPE_POLY_INSTANCE) {
+      if(info->data.poly_instance.llvm_generated) return info->data.poly_instance.llvm_type;
+      info->data.poly_instance.llvm_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), st_get_str_of(info->data.poly_instance.definition->symbol));
+      info->data.poly_instance.llvm_generated = true;
+      u32 element_count = info->data.poly_instance.members.length;
+      LLVMTypeRef *element_types = malloc(sizeof(LLVMTypeRef) * element_count);
+      for(int i = 0; i < element_count; i++) {
+        element_types[i] = llvm_type_of(info->data.poly_instance.members.data[i]->data.struct_member.type);
+      }
+      LLVMStructSetBody(info->data.poly_instance.llvm_type, element_types, element_count, false);
+      return info->data.poly_instance.llvm_type;
     } else {
       printf("Cannot convert this type to LLVM: ");
       print_type(type);
@@ -342,7 +354,7 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
 
 
   LLVMPassManagerBuilderRef pass_manager_builder = LLVMPassManagerBuilderCreate();
-  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 1);
+  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 0);
   LLVMPassManagerRef pass_manager = LLVMCreatePassManager();
   LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
   LLVMPassManagerBuilderDispose(pass_manager_builder);

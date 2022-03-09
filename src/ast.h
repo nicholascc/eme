@@ -28,6 +28,7 @@ typedef enum Ast_Node_Type {
   NODE_FUNCTION_PARAMETER,
   NODE_FUNCTION_DEFINITION,
   NODE_STRUCT_DEFINITION,
+  NODE_POLY_STRUCT_DEFINITION,
   NODE_RETURN
 } Ast_Node_Type;
 
@@ -63,7 +64,9 @@ typedef enum Compilation_Unit_Type {
   UNIT_FUNCTION_SIGNATURE,
   UNIT_FUNCTION_BODY,
   UNIT_STRUCT,
-  UNIT_STRUCT_MEMBER
+  UNIT_STRUCT_MEMBER, // represents both struct members and poly instance members.
+  UNIT_POLY_STRUCT,
+  UNIT_POLY_INSTANCE_MEMBER
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
@@ -79,43 +82,62 @@ typedef struct Compilation_Unit {
   bool poisoned;
 
   Ast_Node *node;
+  Scope *scope;
+
   union {
     struct {
       Compilation_Unit *body;
-      Scope *scope;
     } signature;
     struct {
       Bytecode_Function *bytecode;
       Compilation_Unit *signature;
-      Scope *scope;
     } body;
+
     struct {
       Type type;
-      Scope *scope;
     } struct_def;
     struct {
+      symbol symbol;
+      s32 offset;
       Type type;
-      Scope *scope;
     } struct_member;
+
+    struct {
+      Type_Table instances;
+    } poly_struct_def;
   } data;
 } Compilation_Unit;
 
-GENERATE_DARRAY_HEADER(Compilation_Unit *, Compilation_Unit_Ptr_Array);
-
 typedef struct Scope_Entry {
   symbol symbol;
-  u32 register_id; // Only relevant in block scopes
   union { // Determined based on the parent Scope object's type property
     Ast_Node *node;
-    Compilation_Unit *unit;
-  } declaration;
+    struct {
+      Ast_Node *node;
+      u32 register_id;
+    } block;
+    struct {
+      Ast_Node *node;
+      u32 param_index;
+    } struct_;
+    struct {
+      Type type;
+      Type value; // value of the parameter in this instance
+      u32 param_index;
+    } poly_instance;
+    struct {
+      Compilation_Unit *unit;
+    } file;
+  } data;
 } Scope_Entry;
 
 GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
 
 typedef enum Scope_Type {
   BLOCK_SCOPE,
-  FILE_SCOPE
+  FILE_SCOPE,
+  STRUCT_SCOPE,
+  POLY_INSTANCE_SCOPE
 } Scope_Type;
 
 typedef struct Scope {
@@ -179,9 +201,7 @@ typedef enum Ast_Unary_Op_Type {
   OPMINUS_MINUS_FIRST,
   OPMINUS_MINUS_SECOND,
   OPREFERENCE,
-  OPDEREFERENCE,
-
-  OPREF_TYPE
+  OPDEREFERENCE
 } Ast_Unary_Op_Type;
 
 typedef struct Ast_Unary_Op {
@@ -273,6 +293,14 @@ typedef struct Ast_Struct_Definition {
   Type type;
   Compilation_Unit_Ptr_Array members;
 } Ast_Struct_Definition;
+
+typedef struct Ast_Poly_Struct_Definition {
+  Ast_Node n;
+  symbol symbol;
+  Ast_Node_Ptr_Array parameters;
+  Scope scope;
+  Ast_Node_Ptr_Array members;
+} Ast_Poly_Struct_Definition;
 
 typedef struct Ast_Return {
   Ast_Node n;

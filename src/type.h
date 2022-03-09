@@ -5,6 +5,7 @@
 
 #include "c-utils/integer.h"
 #include "c-utils/darray.h"
+#include "c-utils/table.h"
 #include "symbol_table.h"
 
 #include <llvm-c/Core.h>
@@ -20,20 +21,28 @@ typedef enum Type_Type {
   TYPE_UNKNOWN_INT,
   TYPE_BOOL,
 
-  TYPE_STRUCT
+  TYPE_STRUCT,
+  TYPE_POLY_INSTANCE,
+
+  TYPE_FTYPE // The type of a type.
 } Type_Type;
 
+typedef struct Scope Scope;
 typedef struct Ast_Node Ast_Node;
 typedef struct Ast_Struct_Definition Ast_Struct_Definition;
+typedef struct Ast_Poly_Struct_Definition Ast_Poly_Struct_Definition;
 typedef struct Compilation_Unit Compilation_Unit;
+GENERATE_DARRAY_HEADER(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 
-typedef struct Struct_Member {
-  symbol symbol;
-  s32 offset; // offset in struct in bytes. Set to -1 before the struct is sized.
-  Compilation_Unit *unit;
-} Struct_Member;
+typedef struct Type_Info Type_Info;
+// Type_Infos are uniquely stored in memory, so you can just compare .info pointers to tell if two Types are equal.
+typedef struct Type {
+  int reference_count;
+  Type_Info *info;
+} Type;
 
-GENERATE_DARRAY_HEADER(Struct_Member, Struct_Member_Array);
+GENERATE_DARRAY_HEADER(Type, Type_Array);
+GENERATE_TABLE_HEADER(Type, Type_Table);
 
 typedef struct Type_Info {
   Type_Type type;
@@ -54,19 +63,21 @@ typedef struct Type_Info {
     } integer;
     struct {
       Ast_Struct_Definition *definition;
-      Struct_Member_Array members;
+      Compilation_Unit_Ptr_Array members;
       bool llvm_generated;
       LLVMTypeRef llvm_type;
       symbol name;
     } struct_;
+    struct {
+      Ast_Poly_Struct_Definition *definition;
+      Scope *scope;
+      Compilation_Unit_Ptr_Array members;
+      bool llvm_generated;
+      LLVMTypeRef llvm_type;
+    } poly_instance;
   } data;
 } Type_Info;
 
-// Type_Infos are uniquely stored in memory, so you can just compare .info pointers to tell if two Types are equal.
-typedef struct Type {
-  int reference_count;
-  Type_Info *info;
-} Type;
 
 Type UNKNOWN_TYPE;
 Type NOTHING_TYPE;
@@ -77,6 +88,7 @@ Type INT_TYPE;
 Type UINT_TYPE;
 // ordered unsigned first, least to greatest width (8-64).
 Type INTEGER_TYPES[2][4];
+Type FTYPE_TYPE;
 
 void init_primitive_types(); // initializes the above types. MUST BE CALLED UPON STARTUP!
 bool type_equals(Type a, Type b);
@@ -85,5 +97,9 @@ Type integer_type_with(bool is_signed, u8 width);
 
 void print_type(Type t);
 u32 size_of_type(Type t); // Also computes the size of a struct if that size is unknown.
+
+// These hash functions rely on the uniqueness property of Type_Info pointers.
+u64 hash_type_info_ptr(Type_Info *t);
+u64 hash_type(Type t);
 
 #endif

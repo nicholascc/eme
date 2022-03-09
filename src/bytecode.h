@@ -99,8 +99,6 @@ typedef struct Bytecode_Block {
 
 GENERATE_DARRAY_HEADER(Bytecode_Block, Bytecode_Block_Array);
 
-GENERATE_DARRAY_HEADER(Type, Type_Array);
-
 typedef struct Bytecode_Function {
   // For a function with n arguments, the arguments are passed in through the first n registers.
   u32 param_count;

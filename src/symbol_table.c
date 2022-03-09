@@ -53,6 +53,6 @@ symbol st_get_id_of(char *str, int length) {
 char *st_get_str_of(symbol sym) {
   u64 hash = sym;
   char **val = put_and_get_ptr_String_Table(&table, hash);
-  assert(*val != NULL);
+  assert(*val != NULL && "uninitialized symbol");
   return *val;
 }

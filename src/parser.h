@@ -7,7 +7,6 @@
 Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *needs_semicolon);
 Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *function, Token open_paren);
 Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semicolon_for_expressions);
-Ast_Node *parse_type(Token_Reader *r, Scope *scope);
 Ast_Node *parse_decl(Token_Reader *r, Scope *scope);
 Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope);
 Ast_Node *parse_definition(Token_Reader *r, Scope *scope);

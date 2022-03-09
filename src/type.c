@@ -2,9 +2,12 @@
 
 #include <stdio.h>
 #include "c-utils/darray.h"
+#include "c-utils/hash.h"
 #include "symbol_table.h"
 #include "errors.h"
 #include "ast.h"
+
+GENERATE_DARRAY_CODE(Type, Type_Array);
 
 u32 size_of_type(Type t) {
   if(t.reference_count > 0) return 8;
@@ -20,18 +23,24 @@ u32 size_of_type(Type t) {
     info->sizing_seen = true;
 
     switch(info->type) {
-      case TYPE_STRUCT: {
+      case TYPE_STRUCT:
+      case TYPE_POLY_INSTANCE: {
+        Compilation_Unit_Ptr_Array members;
+        if(info->type == TYPE_STRUCT)
+          members = info->data.struct_.members;
+        else if(info->type == TYPE_POLY_INSTANCE)
+          members = info->data.poly_instance.members;
+
         info->size = 0;
-        for(int i = 0; i < info->data.struct_.members.length; i++) {
-          Struct_Member *member = &info->data.struct_.members.data[i];
-          Compilation_Unit *unit = member->unit;
+        for(int i = 0; i < members.length; i++) {
+          Compilation_Unit *unit = members.data[i];
           assert(unit->type == UNIT_STRUCT_MEMBER);
-          infer_types_of_compilation_unit(unit);
+          type_infer_compilation_unit(unit);
           s32 type_size = size_of_type(unit->data.struct_member.type);
           s32 alignment = alignment_of_size(type_size);
           if(info->size % alignment != 0) info->size += alignment - info->size % alignment;
           assert(info->size % alignment == 0);
-          member->offset = info->size;
+          unit->data.struct_member.offset = info->size;
 
           info->size += type_size;
         }
@@ -62,14 +71,16 @@ s32 alignment_of_size(s32 size) {
 void init_primitive_types() {
   Type_Info *infos = malloc(32*sizeof(Type_Info)); // just allocate more space than necessary
   int n = 0;
-  infos[n] = (Type_Info) {TYPE_UNKNOWN, true, true, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_UNKNOWN, false, false, 0, {0}};
   UNKNOWN_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_NOTHING, true, true, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_NOTHING, false, false, 0, {0}};
   NOTHING_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_POISON, true, true, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_POISON, false, false, 0, {0}};
   POISON_TYPE = (Type) {0, &infos[n++]};
   infos[n] = (Type_Info) {TYPE_BOOL, true, true, 1, {0}};
   BOOL_TYPE = (Type) {0, &infos[n++]};
+  infos[n] = (Type_Info) {TYPE_FTYPE, false, false, 0, {0}};
+  FTYPE_TYPE = (Type) {0, &infos[n++]};
 
   for(int i = 0; i < 2; i++) {
     bool is_signed = i;
@@ -122,13 +133,35 @@ void print_type_info(Type_Info t) {
     }
     case TYPE_BOOL: printf("bool"); break;
     case TYPE_UNKNOWN_INT: printf("literal integer (%lli)", t.data.unknown_int); break;
+    case TYPE_FTYPE: printf("type"); break;
     case TYPE_STRUCT: print_symbol(t.data.struct_.definition->symbol); break;
+    case TYPE_POLY_INSTANCE: {
+      print_symbol(t.data.poly_instance.definition->symbol);
+      Scope *s = t.data.poly_instance.scope;
+      printf("(");
+      assert(s->type == POLY_INSTANCE_SCOPE);
+      for(int i = 0; i < s->entries.length; i++) {
+        if(i > 0) printf(", ");
+        Scope_Entry e = s->entries.data[i];
+        print_type(e.data.poly_instance.type);
+      }
+      printf(")");
+      break;
+    }
     default:
       printf("(unprintable type)"); break;
   }
 }
 
 void print_type(Type t) {
-  for(int i = 0; i < t.reference_count; i++) printf("*");
+  for(int i = 0; i < t.reference_count; i++) printf("^");
   print_type_info(*t.info);
+}
+
+u64 hash_type_info_ptr(Type_Info *t) {
+  return hash_u64((u64)t);
+}
+
+u64 hash_type(Type t) {
+  return hash_combine(hash_u64(t.reference_count), hash_type_info_ptr(t.info));
 }

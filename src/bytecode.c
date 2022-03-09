@@ -11,7 +11,6 @@
 
 GENERATE_DARRAY_CODE(Bytecode_Instruction, Bytecode_Instruction_Array);
 GENERATE_DARRAY_CODE(Bytecode_Block, Bytecode_Block_Array);
-GENERATE_DARRAY_CODE(Type, Type_Array);
 GENERATE_DARRAY_CODE(Bytecode_Function, Bytecode_Function_Array);
 
 Scope_Entry * get_entry_of_identifier_block_scope(symbol symbol, Scope *scope, Location error_location) {
@@ -213,7 +212,7 @@ u32 generate_set_expression_ptr(Ast_Node *node, u32 *block, Bytecode_Function *f
     if(n->first->type == NODE_SYMBOL) {
       Ast_Symbol *sn = (Ast_Symbol *)n->first;
       Scope_Entry *e = get_entry_of_identifier_block_scope(sn->symbol, scope, sn->n.loc);
-      u32 struct_reg = e->register_id;
+      u32 struct_reg = e->data.block.register_id;
       first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
     } else {
       u32 struct_reg = generate_set_expression_ptr(n->first, block, fn, scope);
@@ -226,17 +225,20 @@ u32 generate_set_expression_ptr(Ast_Node *node, u32 *block, Bytecode_Function *f
     u32 member;
     {
       Type first_type = fn->register_types.data[first_reg];
-      assert(first_type.info->type == TYPE_STRUCT);
-      Struct_Member_Array members = first_type.info->data.struct_.members;
+      Compilation_Unit_Ptr_Array members;
+      if(first_type.info->type == TYPE_STRUCT)
+        members = first_type.info->data.struct_.members;
+      else if(first_type.info->type == TYPE_POLY_INSTANCE)
+        members = first_type.info->data.poly_instance.members;
+      else assert(false);
 
       bool found = false;
       for(int i = 0; i < members.length; i++) {
-        if(members.data[i].symbol == s->symbol) {
+        Compilation_Unit *unit = members.data[i];
+        assert(unit->type == UNIT_STRUCT_MEMBER);
+        if(unit->data.struct_member.symbol == s->symbol) {
           found = true;
-          Compilation_Unit *unit = members.data[i].unit;
-          assert(unit->type == UNIT_STRUCT_MEMBER);
           assert(unit->type_inferred);
-
           result_type = unit->data.struct_member.type;
           member = i;
         }
@@ -300,7 +302,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
 
             Scope_Entry *e = get_entry_of_identifier_block_scope(symbol, scope, sn->n.loc);
 
-            u32 ptr_reg = e->register_id;
+            u32 ptr_reg = e->data.block.register_id;
             Type ptr_type = fn->register_types.data[ptr_reg];
             if(ptr_type.reference_count == value_type.reference_count) {
               Bytecode_Instruction inst;
@@ -354,24 +356,25 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           assert(s->n.type == NODE_SYMBOL);
 
           u32 struct_reg = generate_bytecode_expr(n->first, block, fn, scope);
-
           Type struct_type = fn->register_types.data[struct_reg];
-          assert(struct_type.info->type == TYPE_STRUCT);
-
           u32 struct_ptr_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
 
           Type result_type;
           u32 member;
           {
-            Struct_Member_Array members = struct_type.info->data.struct_.members;
+            Compilation_Unit_Ptr_Array members;
+            if(struct_type.info->type == TYPE_STRUCT)
+              members = struct_type.info->data.struct_.members;
+            else if(struct_type.info->type == TYPE_POLY_INSTANCE)
+              members = struct_type.info->data.poly_instance.members;
 
             bool found = false;
             for(int i = 0; i < members.length; i++) {
-              if(members.data[i].symbol == s->symbol) {
+              Compilation_Unit *unit = members.data[i];
+              assert(unit->type == UNIT_STRUCT_MEMBER);
+              if(unit->data.struct_member.symbol == s->symbol) {
                 found = true;
-                Compilation_Unit *unit = members.data[i].unit;
-                assert(unit->type == UNIT_STRUCT_MEMBER);
-                infer_types_of_compilation_unit(unit);
+                type_infer_compilation_unit(unit);
                 result_type = unit->data.struct_member.type;
                 member = i;
               }
@@ -443,7 +446,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_SYMBOL: {
       Ast_Symbol *n = (Ast_Symbol *)node;
       Scope_Entry *e = get_entry_of_identifier_block_scope(n->symbol, scope, node->loc);
-      return e->register_id;
+      return e->data.block.register_id;
     }
     case NODE_BLOCK: {
       return add_block_to_block((Ast_Block *)node, fn, block);
@@ -451,14 +454,14 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_TYPED_DECL: {
       Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
       Scope_Entry *e = get_entry_of_identifier_block_scope(n->symbol, scope, node->loc);
-      e->register_id = add_register(fn, n->type);
+      e->data.block.register_id = add_register(fn, n->type);
       return -1;
     }
     case NODE_UNTYPED_DECL_SET: {
       Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
       Scope_Entry *e = get_entry_of_identifier_block_scope(n->symbol, scope, node->loc);
       u32 reg = add_register(fn, n->type);
-      e->register_id = reg;
+      e->data.block.register_id = reg;
       Bytecode_Instruction inst;
       inst.type = BC_SET;
       inst.data.set.reg_a = reg;
@@ -470,7 +473,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
       Scope_Entry *e = get_entry_of_identifier_block_scope(n->symbol, scope, node->loc);
       u32 reg = fn->register_types.length;
-      e->register_id = add_register(fn, n->type);
+      e->data.block.register_id = add_register(fn, n->type);
       Bytecode_Instruction inst;
       inst.type = BC_SET;
       inst.data.set.reg_a = reg;
@@ -575,7 +578,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Ast_Function_Call *n = (Ast_Function_Call *)node;
       Compilation_Unit *signature = n->signature;
       Compilation_Unit *body = signature->data.signature.body;
-      infer_types_of_compilation_unit(body);
+      type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
 
       u32 *arg_registers = alloca(n->arguments.length * sizeof(u32));
@@ -644,16 +647,20 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *defn, Scope *scope) {
   r->register_types = init_Type_Array(4);
 
-  r->param_count = 0;
-  for(int i = 0; i < defn->scope.entries.length; i++) {
-    Scope_Entry *e = &defn->scope.entries.data[i];
-    if(e->declaration.node->type == NODE_FUNCTION_PARAMETER) {
-      Ast_Function_Parameter *param = (Ast_Function_Parameter *)e->declaration.node;
-      e->register_id = add_register(r, param->type);
-      r->param_count++;
+  r->param_count = defn->parameters.length;
+  for(int i = 0; i < defn->parameters.length; i++) {
+    Ast_Function_Parameter *param = (Ast_Function_Parameter *)defn->parameters.data[i];
+    bool found = false;
+    for(int j = 0; j < defn->scope.entries.length; j++) {
+      Scope_Entry *e = &defn->scope.entries.data[i];
+      if(e->data.block.node->type == NODE_FUNCTION_PARAMETER) {
+        e->data.block.register_id = add_register(r, param->type);
+        found = true;
+        break;
+      }
     }
+    assert(found);
   }
-  assert(r->param_count == defn->parameters.length);
 
   r->blocks = init_Bytecode_Block_Array(2);
   assert(defn->body->type == NODE_BLOCK);
@@ -683,12 +690,12 @@ void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *d
 void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
   if(unit->bytecode_generated || unit->bytecode_generating || unit->poisoned) return;
 
-  infer_types_of_compilation_unit(unit);
+  type_infer_compilation_unit(unit);
   if(unit->type == UNIT_FUNCTION_BODY) {
     assert(unit->node->type == NODE_FUNCTION_DEFINITION);
     unit->bytecode_generating = true;
     Ast_Function_Definition *fn = (Ast_Function_Definition *)unit->node;
-    generate_bytecode_function(unit->data.body.bytecode, fn, unit->data.body.scope);
+    generate_bytecode_function(unit->data.body.bytecode, fn, unit->scope);
     unit->bytecode_generating = false;
     unit->bytecode_generated = true;
   }

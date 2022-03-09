@@ -63,10 +63,10 @@ int main(int argc, char *argv[]) {
   bool main_found = false;
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
-    Compilation_Unit *unit = entry.declaration.unit;
+    Compilation_Unit *unit = entry.data.file.unit;
     if(unit->type == UNIT_FUNCTION_SIGNATURE) {
       Compilation_Unit *body = unit->data.signature.body;
-      infer_types_of_compilation_unit(body);
+      type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
       if(body->poisoned) {
         compilation_has_errors = true;

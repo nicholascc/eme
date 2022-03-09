@@ -151,7 +151,16 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         Type b_type = fn.register_types.data[reg_b];
 
         u32 member = inst.data.get_member_ptr.member;
-        u32 offset = b_type.info->data.struct_.members.data[member].offset;
+        u32 offset;
+        {
+          Compilation_Unit_Ptr_Array members;
+          if(b_type.info->type == TYPE_STRUCT)
+            members = b_type.info->data.struct_.members;
+          else if(b_type.info->type == TYPE_POLY_INSTANCE)
+            members = b_type.info->data.poly_instance.members;
+          offset = members.data[member]->data.struct_member.offset;
+        }
+
         u64 b_u64 = *((u64 *)&local[r_to_id[reg_b]]);
 
         u64 *a = (u64 *)(&local[r_to_id[reg_a]]);

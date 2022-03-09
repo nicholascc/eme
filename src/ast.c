@@ -6,10 +6,10 @@
 #include "errors.h"
 #include "type.h"
 
-GENERATE_DARRAY_CODE(Struct_Member, Struct_Member_Array);
 GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
 GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
+GENERATE_TABLE_CODE(Type, Type_Table);
 
 Ast_Node NULL_AST_NODE = {NODE_NULL, {-1,-1,-1}};
 
@@ -106,7 +106,6 @@ void print_ast_node(Ast_Node *node) {
         case OPDEREFERENCE: printf("*"); break;
         case OPPLUS_PLUS_FIRST: printf("++"); break;
         case OPMINUS_MINUS_FIRST: printf("--"); break;
-        case OPREF_TYPE: printf("^"); break;
       }
       print_ast_node(n->operand);
       switch(n->operator) {
@@ -222,6 +221,22 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_POLY_STRUCT_DEFINITION: {
+      Ast_Poly_Struct_Definition *n = (Ast_Poly_Struct_Definition *)node;
+      print_symbol(n->symbol);
+      printf(" :: struct (");
+      for(int i = 0; i < n->parameters.length; i++) {
+        if(i != 0) printf(", ");
+        print_ast_node(n->parameters.data[i]);
+      }
+      printf("){\n");
+      for(int i = 0; i < n->members.length; i++) {
+        print_ast_node(n->members.data[i]);
+      }
+      printf("}");
+      break;
+    }
+
     case NODE_BLOCK: {
       Ast_Block *n = (Ast_Block *)node;
       printf("{\n");
@@ -236,7 +251,7 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
-    default: printf("CANNOT PRINT NODE TYPE:%i", node->type); break;
+    default: printf("CANNOT PRINT NODE TYPE: %i\n", node->type); break;
   }
 }
 

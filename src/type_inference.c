@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+#include "c-utils/hash.h"
 #include "ast.h"
 #include "errors.h"
 
@@ -75,7 +76,7 @@ Type solidify_type(Type x, Ast_Node node) {
   if(x.info->type == TYPE_POISON) return POISON_TYPE;
   else if(x.info->type == TYPE_UNKNOWN_INT) {
     return INT_TYPE;
-  } else if(x.info->type == TYPE_INT || x.info->type == TYPE_BOOL || x.info->type == TYPE_STRUCT)
+  } else if(x.info->type == TYPE_INT || x.info->type == TYPE_BOOL || x.info->type == TYPE_STRUCT || x.info->type == TYPE_POLY_INSTANCE)
     return x;
   else {
     print_type_info(x);
@@ -87,46 +88,157 @@ Type solidify_type(Type x, Ast_Node node) {
 
 
 
-
-
-Type type_of_type_expr(Ast_Node *type_node, Scope *scope, bool *unit_poisoned) {
-  if(type_node->type == NODE_PRIMITIVE_TYPE) {
-    Ast_Primitive_Type *n = (Ast_Primitive_Type *)type_node;
-    return n->type;
-  } else if(type_node->type == NODE_SYMBOL) {
-    Ast_Symbol *n = (Ast_Symbol *)type_node;
-    Scope *found_scope;
-    Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, type_node->loc, &found_scope);
-    if(found_scope->type == FILE_SCOPE && e->declaration.unit->type == UNIT_STRUCT) {
-      Compilation_Unit *unit = e->declaration.unit;
-      if(!unit->type_inferred) infer_types_of_compilation_unit(unit);
-      if(unit->poisoned) unit->data.struct_def.type = POISON_TYPE;
-      if(unit->data.struct_def.type.info->type == TYPE_POISON) *unit_poisoned = true;
-      return unit->data.struct_def.type;
-    } else {
-      type_inference_error("I expected this symbol to refer to a type, but it doesn't.", type_node->loc, unit_poisoned);
-      exit(1);
+Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
+  switch(expr->type) {
+    case NODE_UNARY_OP: {
+      Ast_Unary_Op *n = (Ast_Unary_Op *)expr;
+      switch(n->operator) {
+        case OPREFERENCE: {
+          Type t = evaluate_type_expr(n->operand, scope, unit_poisoned);
+          t.reference_count++;
+          return t;
+        }
+        default:
+          assert(false);
+      }
     }
-  } else if(type_node->type == NODE_UNARY_OP) {
-    Ast_Unary_Op *n = (Ast_Unary_Op *)type_node;
-    if(n->operator == OPREF_TYPE) {
-      Type type = type_of_type_expr(n->operand, scope, unit_poisoned);
-      type.reference_count++;
-      return type;
-    } else {
-      type_inference_error("Internal compiler error: I expected a type operator.", type_node->loc, unit_poisoned);
-      exit(1);
+    case NODE_SYMBOL: {
+      Ast_Symbol *n = (Ast_Symbol *)expr;
+      Scope *found_scope;
+      Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, n->n.loc, &found_scope);
+      if(found_scope->type == FILE_SCOPE) {
+        Compilation_Unit *unit = e->data.file.unit;
+        Type unit_type = infer_type_of_compilation_unit(unit);
+        if(unit_type.info->type == TYPE_POISON) return POISON_TYPE;
+        else if(unit_type.info->type != TYPE_FTYPE) {
+          type_inference_error("I expected this to be a type; instead it something else.", n->n.loc, unit_poisoned);
+          return POISON_TYPE;
+        }
+        assert(unit->type == UNIT_STRUCT);
+        return unit->data.struct_def.type;
+      } else if(found_scope->type == BLOCK_SCOPE) {
+        type_inference_error("I cannot use a type declared in a block scope.", n->n.loc, unit_poisoned);
+        return POISON_TYPE;
+      } else if(found_scope->type == POLY_INSTANCE_SCOPE) {
+        Type t = e->data.poly_instance.type;
+        if(t.info->type == TYPE_POISON) return POISON_TYPE;
+        else if(t.info->type != TYPE_FTYPE) {
+          type_inference_error("I expected this to be a type; instead it something else.", n->n.loc, unit_poisoned);
+          return POISON_TYPE;
+        }
+        return e->data.poly_instance.value;
+      } else assert(false);
     }
-  } else {
-    type_inference_error("Internal compiler error: I expected a primitive type.", type_node->loc, unit_poisoned);
-    exit(1);
+    case NODE_FUNCTION_CALL: {
+      Ast_Function_Call *n = (Ast_Function_Call *)expr;
+      Compilation_Unit *definition = n->signature;
+      assert(definition->type == UNIT_POLY_STRUCT);
+      type_infer_compilation_unit(definition);
+
+      Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)definition->node;
+      assert(n->arguments.length == def->parameters.length);
+
+      // hash the instance
+      u64 hash;
+      for(int i = 0; i < n->arguments.length; i++) {
+        Ast_Node *p = n->arguments.data[i];
+        Type t = evaluate_type_expr(p, scope, unit_poisoned);
+        if(i == 0) hash = hash_type(t);
+        else hash = hash_combine(hash, hash_type(t));
+      }
+
+      // ...and check if it's already in the table of already made instances.
+      {
+        Type r;
+        if(get_Type_Table(&definition->data.poly_struct_def.instances, hash, &r)) {
+          return r;
+        }
+      }
+
+      // otherwise we make it ourselves.
+
+      Type_Info *info = malloc(sizeof(Type_Info));
+      info->type = TYPE_POLY_INSTANCE;
+      info->sized = false;
+      info->sizing_seen = false;
+      info->size = 0;
+      info->data.poly_instance.definition = def;
+      {
+        Scope *s = malloc(sizeof(Scope));
+        s->type = POLY_INSTANCE_SCOPE;
+        s->has_parent = true;
+        s->parent = scope;
+        s->entries = init_Scope_Entry_Array(2);
+        info->data.poly_instance.scope = s;
+      }
+      info->data.poly_instance.members = init_Compilation_Unit_Ptr_Array(def->members.length);
+      info->data.poly_instance.llvm_generated = false;
+
+      for(int i = 0; i < n->arguments.length; i++) {
+        Ast_Function_Parameter *param = (Ast_Function_Parameter *)def->parameters.data[i];
+        Scope_Entry e;
+        e.symbol = param->symbol;
+        e.data.poly_instance.type = param->type;
+        if(param->type.info->type == TYPE_FTYPE) {
+          e.data.poly_instance.value = evaluate_type_expr(n->arguments.data[i], scope, unit_poisoned);
+        } else if(param->type.info->type == TYPE_POISON) {
+          *unit_poisoned = true;
+        } else assert(false);
+        e.data.poly_instance.param_index = i;
+        Scope_Entry_Array_push(&info->data.poly_instance.scope->entries, e);
+      }
+
+      for(int i = 0; i < def->members.length; i++) {
+        Compilation_Unit *unit = allocate_null_compilation_unit();
+        unit->type = UNIT_STRUCT_MEMBER;
+        unit->type_inferred = false;
+        unit->type_inference_seen = false;
+        unit->bytecode_generated = false;
+        unit->bytecode_generating = false;
+        unit->poisoned = false;
+        unit->node = def->members.data[i];
+        unit->scope = info->data.poly_instance.scope;
+        unit->data.struct_member.offset = -1;
+        unit->data.struct_member.type = UNKNOWN_TYPE;
+
+        if(unit->node->type == NODE_TYPED_DECL) {
+          Ast_Typed_Decl *n = (Ast_Typed_Decl *)unit->node;
+          unit->data.struct_member.symbol = n->symbol;
+        } else if(unit->node->type == NODE_TYPED_DECL_SET) {
+          Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)unit->node;
+          unit->data.struct_member.symbol = n->symbol;
+        } else assert(false);
+
+        Compilation_Unit_Ptr_Array_push(&info->data.poly_instance.members, unit);
+      }
+
+      Type t = {0, info};
+      assert(set_Type_Table(&definition->data.poly_struct_def.instances, hash, t) && "the type was not already in the table");
+      return t;
+    }
+    case NODE_PRIMITIVE_TYPE: {
+      Ast_Primitive_Type *n = (Ast_Primitive_Type *) expr;
+      return n->type;
+    }
+    default:
+      type_inference_error("I cannot evaluate this as a type expression.", expr->loc, unit_poisoned);
+      exit(1);
   }
+}
+
+Type type_of_type_expr(Ast_Node *expr, Scope *scope, Compilation_Unit *unit, Location loc,  bool *unit_poisoned) {
+  Type type = infer_type_of_expr(expr, scope, unit, true, unit_poisoned);
+  if(type.reference_count != 0 || type.info->type != TYPE_FTYPE) {
+    error_cannot_implicitly_cast(type, FTYPE_TYPE, loc, false, unit_poisoned);
+    return POISON_TYPE;
+  }
+  return evaluate_type_expr(expr, scope, unit_poisoned);
 }
 
 Type infer_type_of_decl(Ast_Node *decl, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
   if(decl->type == NODE_TYPED_DECL) {
     Ast_Typed_Decl *n = (Ast_Typed_Decl *)decl;
-    if(n->type.info->type == TYPE_UNKNOWN) n->type = type_of_type_expr(n->type_node, scope, unit_poisoned);
+    if(n->type.info->type == TYPE_UNKNOWN) n->type = type_of_type_expr(n->type_node, scope, unit, decl->loc, unit_poisoned);
     return n->type;
 
   } else if(decl->type == NODE_TYPED_DECL_SET) {
@@ -134,7 +246,7 @@ Type infer_type_of_decl(Ast_Node *decl, Scope *scope, Compilation_Unit *unit, bo
     if(n->type.info->type != TYPE_UNKNOWN) return n->type;
 
     Type inferred_type = infer_type_of_expr(n->value, scope, unit, true, unit_poisoned);
-    Type given_type = type_of_type_expr(n->type_node, scope, unit_poisoned);
+    Type given_type = type_of_type_expr(n->type_node, scope, unit, decl->loc, unit_poisoned);
 
     if(inferred_type.info->type == TYPE_POISON || given_type.info->type == TYPE_POISON) {
       n->type = POISON_TYPE;
@@ -182,7 +294,7 @@ Type infer_type_of_decl_unit(Compilation_Unit *unit, Scope *scope) {
 Type infer_type_of_struct_definition(Ast_Struct_Definition *def, Scope *scope, bool *unit_poisoned) {
   Type_Info *info = malloc(sizeof(Type_Info));
   info->type = TYPE_STRUCT;
-  info->data.struct_.members = init_Struct_Member_Array(2);
+  info->data.struct_.members = init_Compilation_Unit_Ptr_Array(2);
   info->data.struct_.definition = def;
   info->data.struct_.llvm_generated = false;
   info->data.struct_.name = def->symbol;
@@ -193,23 +305,41 @@ Type infer_type_of_struct_definition(Ast_Struct_Definition *def, Scope *scope, b
   for(int i = 0; i < def->members.length; i++) {
     Compilation_Unit *unit = def->members.data[i];
     Ast_Node *node = unit->node;
-    Struct_Member member;
-    member.unit = unit;
-    member.offset = -1;
+    unit->data.struct_member.offset = -1;
     if(node->type == NODE_TYPED_DECL) {
       Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
-      member.symbol = n->symbol;
+      unit->data.struct_member.symbol = n->symbol;
     } else if(node->type == NODE_TYPED_DECL_SET) {
       Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
-      member.symbol = n->symbol;
+      unit->data.struct_member.symbol = n->symbol;
     } else assert(false);
 
-    Struct_Member_Array_push(&info->data.struct_.members, member);
+    Compilation_Unit_Ptr_Array_push(&info->data.struct_.members, unit);
   }
 
   Type type = {0,info};
   def->type = type;
   return type;
+}
+
+void infer_types_of_function_parameters(Ast_Node_Ptr_Array parameters, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
+  for(int i = 0; i < parameters.length; i++) {
+    Ast_Function_Parameter *param = (Ast_Function_Parameter *)parameters.data[i];
+    assert(param->n.type == NODE_FUNCTION_PARAMETER);
+    param->type = type_of_type_expr(param->type_node, scope, unit, param->type_node->loc, unit_poisoned);
+  }
+}
+
+
+void infer_type_of_poly_struct_definition(Ast_Poly_Struct_Definition *def, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
+  infer_types_of_function_parameters(def->parameters, scope, unit, unit_poisoned);
+  for(int i = 0; i < def->parameters.length; i++) {
+    Ast_Function_Parameter *param = (Ast_Function_Parameter *)def->parameters.data[i];
+    if(param->type.info->type != TYPE_FTYPE) {
+      type_inference_error("The parameters of a polymorphic struct must be of type 'type'.", param->n.loc, unit_poisoned);
+      param->type = POISON_TYPE;
+    }
+  }
 }
 
 
@@ -238,9 +368,9 @@ Type get_type_of_identifier_in_scope(symbol symbol, Scope *scope, Location error
   Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, error_location, &found_scope);
 
   if(found_scope->type == FILE_SCOPE)
-    return infer_type_of_decl_unit(e->declaration.unit, found_scope);
+    return infer_type_of_compilation_unit(e->data.file.unit);
   else if(found_scope->type == BLOCK_SCOPE) {
-    Ast_Node *node = e->declaration.node;
+    Ast_Node *node = e->data.block.node;
     if(node->type == NODE_TYPED_DECL) {
       Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
       assert(n->type.info->type != TYPE_UNKNOWN);
@@ -260,6 +390,8 @@ Type get_type_of_identifier_in_scope(symbol symbol, Scope *scope, Location error
     }
     type_inference_error("Internal compiler error: Node referenced in local scope is not a declaration or argument.", node->loc, unit_poisoned);
     exit(1);
+  } else if(found_scope->type == POLY_INSTANCE_SCOPE) {
+    return FTYPE_TYPE;
   } else assert(false);
 }
 
@@ -274,6 +406,13 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         case OPDEREFERENCE: {
           Type op = infer_type_of_expr(n->operand, scope, unit, true, unit_poisoned);
           if(op.info->type == TYPE_POISON) return POISON_TYPE;
+          else if(op.info->type == TYPE_FTYPE) {
+            if(n->operator == OPDEREFERENCE) {
+              type_inference_error("I cannot use the dereference operator on a type.", n->n.loc, unit_poisoned);
+              return POISON_TYPE;
+            }
+            return FTYPE_TYPE;
+          }
           if(n->operator == OPREFERENCE) op.reference_count++;
           else {
             if(op.reference_count == 0) {
@@ -358,25 +497,37 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         case OPSTRUCT_MEMBER_REF: {
           Type first = infer_type_of_expr(n->first, scope, unit, true, unit_poisoned);
           if(first.info->type == TYPE_POISON) return POISON_TYPE;
-          if(first.info->type != TYPE_STRUCT) {
-            type_inference_error("The first operand of a '.' operator must be a struct.", node->loc, unit_poisoned);
-            return POISON_TYPE;
-          }
           if(n->second->type != NODE_SYMBOL) {
             type_inference_error("The second operand of a '.' operator must be a symbol.", node->loc, unit_poisoned);
             return POISON_TYPE;
           }
           symbol sym = ((Ast_Symbol *)n->second)->symbol;
-          Struct_Member_Array members = first.info->data.struct_.members;
-          for(int i = 0; i < members.length; i++) {
-            Struct_Member member = members.data[i];
-            if(member.symbol == sym) {
-              Compilation_Unit *unit = member.unit;
+          if(first.info->type == TYPE_STRUCT) {
+            Compilation_Unit_Ptr_Array members = first.info->data.struct_.members;
+            for(int i = 0; i < members.length; i++) {
+              Compilation_Unit *unit = members.data[i];
               assert(unit->type == UNIT_STRUCT_MEMBER);
-              infer_types_of_compilation_unit(unit);
-              if(n->operator == OPSTRUCT_MEMBER_REF) unit->data.struct_member.type.reference_count++;
-              return unit->data.struct_member.type;
+              if(unit->data.struct_member.symbol == sym) {
+                type_infer_compilation_unit(unit);
+                if(n->operator == OPSTRUCT_MEMBER_REF) unit->data.struct_member.type.reference_count++;
+                return unit->data.struct_member.type;
+              }
             }
+          } else if(first.info->type == TYPE_POLY_INSTANCE) {
+            Compilation_Unit_Ptr_Array members = first.info->data.poly_instance.members;
+            for(int i = 0; i < members.length; i++) {
+              Compilation_Unit *unit = members.data[i];
+              assert(unit->type == UNIT_STRUCT_MEMBER);
+              if(unit->data.struct_member.symbol == sym) {
+                type_infer_compilation_unit(unit);
+                Type r = unit->data.struct_member.type;
+                if(n->operator == OPSTRUCT_MEMBER_REF) r.reference_count++;
+                return r;
+              }
+            }
+          } else {
+            type_inference_error("The first operand of a '.' operator must be a struct.", node->loc, unit_poisoned);
+            return POISON_TYPE;
           }
 
           type_inference_error(NULL, node->loc, unit_poisoned);
@@ -471,25 +622,47 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         assert(found_scope->type == FILE_SCOPE);
       }
 
-      Compilation_Unit *unit = e->declaration.unit;
-      assert(unit->type == UNIT_FUNCTION_SIGNATURE);
-      n->signature = unit;
-      infer_types_of_compilation_unit(unit);
+      Compilation_Unit *unit = e->data.file.unit;
+      if(unit->type == UNIT_FUNCTION_SIGNATURE) {
+        n->signature = unit;
+        type_infer_compilation_unit(unit);
 
-      Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-      if(n->arguments.length != def->parameters.length) {
-        type_inference_error(NULL, node->loc, unit_poisoned);
-        printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length,n->arguments.length);
-      } else {
-        for(int i = 0; i < n->arguments.length; i++) {
-          Type defined = ((Ast_Function_Parameter *)def->parameters.data[i])->type;
-          Type passed = infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned);
-          if(!can_implicitly_cast_type(passed, defined))
-            error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+        Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
+        if(n->arguments.length != def->parameters.length) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length,n->arguments.length);
+        } else {
+          for(int i = 0; i < n->arguments.length; i++) {
+            Type defined = ((Ast_Function_Parameter *)def->parameters.data[i])->type;
+            Type passed = infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned);
+            if(!can_implicitly_cast_type(passed, defined))
+              error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+          }
         }
-      }
+        return def->return_type;
+      } else if(unit->type == UNIT_POLY_STRUCT) {
+        n->signature = unit;
+        type_infer_compilation_unit(unit);
 
-      return def->return_type;
+        Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)unit->node;
+        if(n->arguments.length != def->parameters.length) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I expected %i arguments to this polymorphic struct, but got %i instead.\n", def->parameters.length,n->arguments.length);
+        } else {
+          for(int i = 0; i < n->arguments.length; i++) {
+            Type defined = ((Ast_Function_Parameter *)def->parameters.data[i])->type;
+            Type passed = infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned);
+            if(!can_implicitly_cast_type(passed, defined))
+              error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+          }
+        }
+        return FTYPE_TYPE;
+      }
+    }
+
+    case NODE_PRIMITIVE_TYPE: {
+      Ast_Primitive_Type *n = (Ast_Primitive_Type *)node;
+      return FTYPE_TYPE;
     }
 
     case NODE_NULL: {
@@ -576,18 +749,15 @@ Type infer_types_of_block(Ast_Node *node_block, Compilation_Unit *unit, bool usi
   return using_result ? last_statement_type : NOTHING_TYPE;
 }
 
-Type infer_type_of_function_signature(Ast_Function_Definition *node, Scope *scope, bool *unit_poisoned) {
-  node->return_type = type_of_type_expr(node->return_type_node, scope, unit_poisoned);
-  for(int i = 0; i < node->parameters.length; i++) {
-    Ast_Function_Parameter *param = (Ast_Function_Parameter *)node->parameters.data[i];
-    assert(param->n.type == NODE_FUNCTION_PARAMETER);
-    param->type = type_of_type_expr(param->type_node, scope, unit_poisoned);
-  }
+Type infer_type_of_function_signature(Ast_Function_Definition *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
+  node->return_type = type_of_type_expr(node->return_type_node, scope, unit, node->return_type_node->loc, unit_poisoned);
+
+  infer_types_of_function_parameters(node->parameters, scope, unit, unit_poisoned);
 
   return NOTHING_TYPE; // placeholder
 }
 
-void infer_types_of_compilation_unit(Compilation_Unit *unit) {
+void type_infer_compilation_unit(Compilation_Unit *unit) {
   if(unit->type_inferred || unit->poisoned) return;
   if(unit->type_inference_seen) {
     print_error_message("I found a circular dependency at this node.", unit->node->loc);
@@ -597,7 +767,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit) {
   unit->type_inference_seen = true;
   switch(unit->type) {
     case UNIT_FUNCTION_SIGNATURE: {
-      if(infer_type_of_function_signature((Ast_Function_Definition *)unit->node, unit->data.signature.scope, &unit->poisoned).info->type == TYPE_POISON) {
+      if(infer_type_of_function_signature((Ast_Function_Definition *)unit->node, unit->scope, unit, &unit->poisoned).info->type == TYPE_POISON) {
         unit->poisoned = true;
       }
       break;
@@ -605,7 +775,7 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit) {
     case UNIT_FUNCTION_BODY: {
       Compilation_Unit *sig = unit->data.body.signature;
       assert(sig->type == UNIT_FUNCTION_SIGNATURE);
-      infer_types_of_compilation_unit(sig);
+      type_infer_compilation_unit(sig);
       if(sig->poisoned) {
         unit->poisoned = true;
       } else {
@@ -616,18 +786,22 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit) {
       break;
     }
     case UNIT_STRUCT: {
-      Type type = infer_type_of_struct_definition((Ast_Struct_Definition *)unit->node, unit->data.struct_def.scope, &unit->poisoned);
+      Type type = infer_type_of_struct_definition((Ast_Struct_Definition *)unit->node, unit->scope, &unit->poisoned);
       unit->data.struct_def.type = type;
+      break;
+    }
+    case UNIT_POLY_STRUCT: {
+      infer_type_of_poly_struct_definition((Ast_Poly_Struct_Definition *)unit->node, unit->scope, unit, &unit->poisoned);
       break;
     }
     case UNIT_STRUCT_MEMBER: {
       Ast_Node *node = unit->node;
       if(node->type == NODE_TYPED_DECL) {
         Ast_Typed_Decl *n = (Ast_Typed_Decl *)node;
-        unit->data.struct_member.type = type_of_type_expr(n->type_node, unit->data.struct_member.scope, &unit->poisoned);
+        unit->data.struct_member.type = type_of_type_expr(n->type_node, unit->scope, unit, node->loc, &unit->poisoned);
       } else if(node->type == NODE_TYPED_DECL_SET) {
         Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
-        unit->data.struct_member.type = type_of_type_expr(n->type_node, unit->data.struct_member.scope, &unit->poisoned);
+        unit->data.struct_member.type = type_of_type_expr(n->type_node, unit->scope, unit, node->loc, &unit->poisoned);
       } else assert(false);
       break;
     }
@@ -636,4 +810,26 @@ void infer_types_of_compilation_unit(Compilation_Unit *unit) {
       exit(1);
   }
   unit->type_inferred = true;
+}
+
+Type infer_type_of_compilation_unit(Compilation_Unit *unit) {
+  type_infer_compilation_unit(unit);
+  if(unit->poisoned) return POISON_TYPE;
+
+  switch(unit->type) {
+    case UNIT_STRUCT: {
+      return FTYPE_TYPE;
+    }
+    case UNIT_STRUCT_MEMBER: {
+      return unit->data.struct_member.type;
+    }
+
+    case UNIT_FUNCTION_SIGNATURE:
+    case UNIT_FUNCTION_BODY:
+    case UNIT_POLY_STRUCT:
+    default: {
+      print_error_message("Internal compiler error: Tried to find the type of this compilation unit, which has no type.", unit->node->loc);
+      exit(1);
+    }
+  }
 }

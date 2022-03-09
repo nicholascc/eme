@@ -32,7 +32,10 @@ TYPE DARRAY_NAME_push(DARRAY_NAME *arr); // Removes an element from the end of t
 
 ### hash.h
 
-Provides functions for hashing strings for use in hash tables. `hash_string` hashes a string with a given length, and `hash_string_nullterm` hashes a null-terminated string without including the null byte (so that you are able to call `hash_string` and `hash_string_nullterm` on the same underlying string and get the same hash).
+Provides functions for hashing strings and data for use in hash tables. All hashes are 64-bit unsigned integers.
+* `hash_u64` hashes a 64-bit unsigned integer. Can also be used to hash any other 64-bit data, like pointers.
+* `hash_combine` returns a hash combining two other hashes.
+* `hash_string` hashes a string with a given length, and `hash_string_nullterm` hashes a null-terminated string without including the null byte (so that you are able to call `hash_string` and `hash_string_nullterm` on the same underlying string and get the same hash).
 
 ### table.h
 
