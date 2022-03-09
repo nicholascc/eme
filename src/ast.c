@@ -186,8 +186,12 @@ void print_ast_node(Ast_Node *node) {
 
     case NODE_RETURN: {
       Ast_Return *n = (Ast_Return *)node;
-      printf("return ");
-      print_ast_node(n->value);
+      if(n->is_return_nothing)
+        printf("return");
+      else {
+        printf("return ");
+        print_ast_node(n->value);
+      }
       break;
     }
 

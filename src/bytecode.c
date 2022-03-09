@@ -82,6 +82,10 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       printf("ret r%i\n", inst.data.ret.reg);
       break;
     }
+    case BC_RETURN_NOTHING: {
+      printf("ret_nothing\n");
+      break;
+    }
     case BC_BRANCH: {
       printf("branch %i\n", inst.data.branch.block);
       break;
@@ -137,7 +141,7 @@ u32 add_register(Bytecode_Function *fn, Type type) {
 
 void add_instruction(Bytecode_Block *block, Bytecode_Instruction inst) {
   assert(!block->is_concluded);
-  if(inst.type == BC_RETURN || inst.type == BC_BRANCH || inst.type == BC_COND_BRANCH)
+  if(inst.type == BC_RETURN || inst.type == BC_RETURN_NOTHING || inst.type == BC_BRANCH || inst.type == BC_COND_BRANCH)
     block->is_concluded = true;
   Bytecode_Instruction_Array_push(&block->instructions, inst);
 }
@@ -483,11 +487,19 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     }
     case NODE_RETURN: {
       Ast_Return *n = (Ast_Return *)node;
-      Bytecode_Instruction inst;
-      inst.type = BC_RETURN;
-      inst.data.ret.reg = generate_bytecode_expr(n->value, block, fn, scope);
-      add_instruction(&fn->blocks.data[*block], inst);
-      return -1;
+      if(fn->blocks.data[*block].is_concluded) return -1;
+      if(n->is_return_nothing) {
+        Bytecode_Instruction inst;
+        inst.type = BC_RETURN_NOTHING;
+        add_instruction(&fn->blocks.data[*block], inst);
+        return -1;
+      } else {
+        Bytecode_Instruction inst;
+        inst.type = BC_RETURN;
+        inst.data.ret.reg = generate_bytecode_expr(n->value, block, fn, scope);
+        add_instruction(&fn->blocks.data[*block], inst);
+        return inst.data.ret.reg;
+      }
     }
     case NODE_IF: {
       Ast_If *n = (Ast_If *)node;
@@ -586,11 +598,17 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         arg_registers[i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
       }
 
-      u32 result_reg = add_register(fn, ((Ast_Function_Definition *)body->node)->return_type);
+      Type return_type = ((Ast_Function_Definition *)body->node)->return_type;
+      u32 result_reg;
+      if(return_type.info->type == TYPE_NOTHING)
+        result_reg = -1;
+      else
+        result_reg = add_register(fn, return_type);
       {
         Bytecode_Instruction inst;
         inst.type = BC_CALL;
         inst.data.call.to = body->data.body.bytecode;
+        inst.data.call.keep_return_value = return_type.info->type != TYPE_NOTHING;
         inst.data.call.reg = result_reg;
         add_instruction(&fn->blocks.data[*block], inst);
       }
@@ -673,16 +691,8 @@ void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *d
 
   // add a default return if the block isn't concluded, since every block must be concluded
   if(!r->blocks.data[generated.exit].is_concluded) {
-    Bytecode_Instruction set_literal;
-    set_literal.type = BC_SET_LITERAL;
-    u32 reg = add_register(r, r->return_type);
-    set_literal.data.set_literal.reg_a = reg;
-    set_literal.data.set_literal.lit_b = 0;
-    add_instruction(&r->blocks.data[generated.exit], set_literal);
-
     Bytecode_Instruction ret;
-    ret.type = BC_RETURN;
-    ret.data.ret.reg = reg;
+    ret.type = BC_RETURN_NOTHING;
     add_instruction(&r->blocks.data[generated.exit], ret);
   }
 }

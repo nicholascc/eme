@@ -22,6 +22,8 @@ LLVMTypeRef llvm_type_of(Type type) {
       return LLVMIntType(info->data.integer.width);
     } else if(info->type == TYPE_BOOL) {
       return LLVMIntType(1);
+    } else if(info->type == TYPE_NOTHING) {
+      return LLVMVoidType();
     } else if(info->type == TYPE_STRUCT) {
       if(info->data.struct_.llvm_generated) return info->data.struct_.llvm_type;
       info->data.struct_.llvm_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), st_get_str_of(info->data.struct_.name));
@@ -121,7 +123,6 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
     Bytecode_Block block = fn.blocks.data[i];
     LLVMBasicBlockRef llb = llblocks[i];
     LLVMPositionBuilderAtEnd(builder, llb);
-
     for(int j = 0; j < block.instructions.length; j++) {
       Bytecode_Instruction inst = block.instructions.data[j];
       switch(inst.type) {
@@ -265,7 +266,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
             args[k] = generate_llvm_cast(builder, loaded, fn.register_types.data[reg], to_call.register_types.data[k]);
           }
           LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, to_call.param_count, "");
-          LLVMBuildStore(builder, a, r[result_reg]);
+          if(inst.data.call.keep_return_value) LLVMBuildStore(builder, a, r[result_reg]);
           break;
         }
         case BC_ARG: {
@@ -277,6 +278,13 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMValueRef a = LLVMBuildLoad(builder, r[inst.data.ret.reg], "");
           a = generate_llvm_cast(builder, a, fn.register_types.data[inst.data.ret.reg], fn.return_type);
           LLVMBuildRet(builder, a);
+          break;
+        }
+        case BC_RETURN_NOTHING: {
+          if(fn.return_type.info->type == TYPE_NOTHING)
+            LLVMBuildRetVoid(builder);
+          else
+            LLVMBuildUnreachable(builder);
           break;
         }
         case BC_BRANCH: {
@@ -299,9 +307,6 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
 
   free(llblocks);
   free(r);
-
-  LLVMVerifyModule(mod, LLVMAbortProcessAction, &error);
-  LLVMDisposeMessage(error);
 }
 
 void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
@@ -329,6 +334,8 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
   LLVMDisposeBuilder(builder);
 
 
+  printf("Verifying...\n");
+  LLVMWriteBitcodeToFile(mod, "out/out.bc");
   is_error = LLVMVerifyModule(mod, LLVMAbortProcessAction, &error);
   if(is_error) {
     printf("Internal compiler error in LLVM module verification: %s\n", error);

@@ -31,6 +31,7 @@ typedef enum Bytecode_Instruction_Type {
   BC_ARG,
 
   BC_RETURN,
+  BC_RETURN_NOTHING,
   BC_BRANCH,
   BC_COND_BRANCH
 } Bytecode_Instruction_Type;
@@ -67,6 +68,7 @@ typedef struct Bytecode_Instruction {
 
     struct {
       Bytecode_Function *to;
+      bool keep_return_value;
       u32 reg;
     } call;
 

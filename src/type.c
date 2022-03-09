@@ -50,7 +50,6 @@ u32 size_of_type(Type t) {
       case TYPE_UNKNOWN_INT:
       case TYPE_BOOL:
       case TYPE_UNKNOWN:
-      case TYPE_NOTHING:
       case TYPE_POISON:
       default: assert(false);
     }
@@ -61,8 +60,8 @@ u32 size_of_type(Type t) {
 }
 
 s32 alignment_of_size(s32 size) {
-  if(size < 1) assert(false);
-  if(size == 1) return 1;
+  if(size < 0) assert(false);
+  if(size == 1 || size == 0) return 1;
   if(size == 2) return 2;
   if(size <= 4) return 4;
   return 8;
@@ -73,7 +72,7 @@ void init_primitive_types() {
   int n = 0;
   infos[n] = (Type_Info) {TYPE_UNKNOWN, false, false, 0, {0}};
   UNKNOWN_TYPE = (Type) {0, &infos[n++]};
-  infos[n] = (Type_Info) {TYPE_NOTHING, false, false, 0, {0}};
+  infos[n] = (Type_Info) {TYPE_NOTHING, true, true, 0, {0}};
   NOTHING_TYPE = (Type) {0, &infos[n++]};
   infos[n] = (Type_Info) {TYPE_POISON, false, false, 0, {0}};
   POISON_TYPE = (Type) {0, &infos[n++]};

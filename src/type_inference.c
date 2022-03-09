@@ -574,18 +574,27 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
     }
     case NODE_RETURN: {
       Ast_Return *n = (Ast_Return *)node;
-      Type value = infer_type_of_expr(n->value, scope, unit, true, unit_poisoned);
-      if(value.info->type == TYPE_POISON) return POISON_TYPE;
-      if(unit->type != UNIT_FUNCTION_BODY) {
-        type_inference_error("Cannot return outside of a function body", node->loc, unit_poisoned);
-        return POISON_TYPE;
+      if(n->is_return_nothing) {
+        Ast_Function_Definition *fn_def = (Ast_Function_Definition *)unit->node;
+        if(fn_def->return_type.info->type != TYPE_NOTHING) {
+          type_inference_error("You must provide a return value for this function.", node->loc, unit_poisoned);
+          return POISON_TYPE;
+        }
+        return NOTHING_TYPE;
+      } else {
+        Type value = infer_type_of_expr(n->value, scope, unit, true, unit_poisoned);
+        if(value.info->type == TYPE_POISON) return POISON_TYPE;
+        if(unit->type != UNIT_FUNCTION_BODY) {
+          type_inference_error("You cannot return outside of a function body.", node->loc, unit_poisoned);
+          return POISON_TYPE;
+        }
+        Ast_Function_Definition *fn_def = (Ast_Function_Definition *)unit->node;
+        if(!can_implicitly_cast_type(value, fn_def->return_type)) {
+          error_cannot_implicitly_cast(value, fn_def->return_type, node->loc, false, unit_poisoned);
+          return POISON_TYPE;
+        }
+        return fn_def->return_type;
       }
-      Ast_Function_Definition *fn_def = (Ast_Function_Definition *)unit->node;
-      if(!can_implicitly_cast_type(value, fn_def->return_type)) {
-        error_cannot_implicitly_cast(value, fn_def->return_type, node->loc, false, unit_poisoned);
-        return POISON_TYPE;
-      }
-      return fn_def->return_type;
     }
     case NODE_IF: {
       Ast_If *n = (Ast_If *)node;

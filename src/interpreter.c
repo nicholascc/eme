@@ -195,8 +195,10 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
           params[k] = &local[r_to_id[inst.data.arg.reg]];
         }
         u8 *result_ptr = interpret_bytecode_function(to_call, params);
-        memcpy(&local[r_to_id[result_reg]], result_ptr, size_of_type(fn.register_types.data[result_reg]));
-        free(result_ptr);
+        if(inst.data.call.keep_return_value) {
+          memcpy(&local[r_to_id[result_reg]], result_ptr, size_of_type(fn.register_types.data[result_reg]));
+        }
+        if(result_ptr) free(result_ptr);
         break;
       }
       case BC_ARG: {
@@ -211,6 +213,12 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         free(r_to_id);
         free(local);
         return result;
+      }
+      case BC_RETURN_NOTHING: {
+        assert(fn.return_type.info->type == TYPE_NOTHING);
+        free(r_to_id);
+        free(local);
+        return NULL;
       }
       case BC_BRANCH: {
         block = fn.blocks.data[inst.data.branch.block];

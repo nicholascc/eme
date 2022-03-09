@@ -483,6 +483,14 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
   } else if(first.type == TRETURN) {
     Ast_Return *n = (Ast_Return *)allocate_ast_node(NODE_RETURN, sizeof(Ast_Return));
     n->n.loc = first.loc;
+    save_state(r);
+    Token t = peek_token(r);
+    if(t.type == TSEMICOLON) {
+      n->is_return_nothing = true;
+      return (Ast_Node *)n;
+    }
+    revert_state(r);
+    n->is_return_nothing = false;
     n->value = parse_expression(r, scope, 0, NULL);
     expect_and_eat_semicolon(r);
     return (Ast_Node *)n;

@@ -304,7 +304,8 @@ typedef struct Ast_Poly_Struct_Definition {
 
 typedef struct Ast_Return {
   Ast_Node n;
-  Ast_Node *value;
+  bool is_return_nothing;
+  Ast_Node *value; // only exists if is_return_nothing is false
 } Ast_Return;
 
 Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size);
