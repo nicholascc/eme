@@ -39,4 +39,7 @@ void print_one_line_in_file(int file_id, int line);
 // Same behavior as print_one_line_in_file, but will print `lines_to_print` lines before the indicated line if it can.
 void print_lines_in_file(int file_id, int line, int lines_to_print);
 
+// Utility function, log10 of an int.
+int int_log10(int x);
+
 #endif /* end of include guard: ERROR_H */

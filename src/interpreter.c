@@ -90,7 +90,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
           if(c == 0) assert(false); // TODO: HANDLE INTERPRETER ERRORS PROPERLY
           a = b / c;
         } else assert(false);
-
+        
         memcpy(&local[r_to_id[reg_a]], &a, size_of_type(fn.register_types.data[reg_a]));
         break;
       }
@@ -186,6 +186,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
       case BC_CALL: {
         Bytecode_Function to_call = *inst.data.call.to;
         u32 result_reg = inst.data.call.reg;
+        bool keep_return_value = inst.data.call.keep_return_value;
 
         u8 **params = malloc(to_call.param_count * sizeof(u8 *));
         for(int k = 0; k < to_call.param_count; k++) {
@@ -195,7 +196,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
           params[k] = &local[r_to_id[inst.data.arg.reg]];
         }
         u8 *result_ptr = interpret_bytecode_function(to_call, params);
-        if(inst.data.call.keep_return_value) {
+        if(keep_return_value) {
           memcpy(&local[r_to_id[result_reg]], result_ptr, size_of_type(fn.register_types.data[result_reg]));
         }
         if(result_ptr) free(result_ptr);

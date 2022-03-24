@@ -15,6 +15,8 @@ void print_and_exit(char *s) {
 }
 
 int int_log10(int x) {
+  assert(x >= 0);
+  if(x == 0) return 0;
   return (int)log10((double)x); // @Cleanup this is ugly
 }
 

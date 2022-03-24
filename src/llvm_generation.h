@@ -4,6 +4,6 @@
 #include "bytecode.h"
 #include "ast.h"
 
-void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir);
+void llvm_generate_module(Bytecode_Function_Ptr_Array fns, char *out_obj, char *out_asm, char *out_ir);
 
 #endif

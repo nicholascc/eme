@@ -76,20 +76,18 @@ inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, T
 
 
 // the compilation unit supplied here must be a function body.
-void generate_llvm_function_signature(LLVMModuleRef mod, Compilation_Unit unit) {
-  assert(unit.type == UNIT_FUNCTION_BODY);
-  Bytecode_Function *fn = unit.data.body.bytecode;
+void generate_llvm_function_signature(LLVMModuleRef mod, Bytecode_Function *fn) {
   LLVMTypeRef *arg_types = malloc(fn->param_count * sizeof(LLVMTypeRef));
   for(int i = 0; i < fn->param_count; i++) {
     arg_types[i] = llvm_type_of(fn->register_types.data[i]);
   }
 
-  char *name = st_get_str_of(((Ast_Function_Definition *)unit.node)->symbol);
+  char *name = st_get_str_of(fn->unique_name);
 
   LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(fn->return_type), arg_types, fn->param_count, false));
   LLVMSetFunctionCallConv(llf, LLVMCCallConv);
 
-  fn->llvm_function =  llf;
+  fn->llvm_function = llf;
 }
 
 
@@ -255,6 +253,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         case BC_CALL: {
           Bytecode_Function to_call = *inst.data.call.to;
           u32 result_reg = inst.data.call.reg;
+          bool keep_return_value = inst.data.call.keep_return_value;
           LLVMValueRef llto_call = to_call.llvm_function;
           LLVMValueRef *args = malloc(to_call.param_count *sizeof(LLVMValueRef));
           for(int k = 0; k < to_call.param_count; k++) {
@@ -266,7 +265,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
             args[k] = generate_llvm_cast(builder, loaded, fn.register_types.data[reg], to_call.register_types.data[k]);
           }
           LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, to_call.param_count, "");
-          if(inst.data.call.keep_return_value) LLVMBuildStore(builder, a, r[result_reg]);
+          if(keep_return_value) LLVMBuildStore(builder, a, r[result_reg]);
           break;
         }
         case BC_ARG: {
@@ -304,31 +303,24 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
       }
     }
   }
-
   free(llblocks);
   free(r);
 }
 
-void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
+void llvm_generate_module(Bytecode_Function_Ptr_Array fns, char *out_obj, char *out_asm, char *out_ir) {
   char *error = NULL;
   bool is_error = false;
 
   LLVMModuleRef mod = LLVMModuleCreateWithName("main_module");
 
-  for(int i = 0; i < ast.compilation_units.length; i++) {
-    Compilation_Unit unit = *ast.compilation_units.data[i];
-    if(unit.type != UNIT_FUNCTION_BODY) continue;
-    assert(unit.bytecode_generated);
-    generate_llvm_function_signature(mod, unit);
+  for(int i = 0; i < fns.length; i++) {
+    generate_llvm_function_signature(mod, fns.data[i]);
   }
 
   LLVMBuilderRef builder = LLVMCreateBuilder();
 
-  for(int i = 0; i < ast.compilation_units.length; i++) {
-    Compilation_Unit unit = *ast.compilation_units.data[i];
-    if(unit.type != UNIT_FUNCTION_BODY) continue;
-    Bytecode_Function fn = *unit.data.body.bytecode;
-    generate_llvm_function(mod, builder, fn);
+  for(int i = 0; i < fns.length; i++) {
+    generate_llvm_function(mod, builder, *fns.data[i]);
   }
 
   LLVMDisposeBuilder(builder);
@@ -361,7 +353,7 @@ void llvm_generate_module(Ast ast, char *out_obj, char *out_asm, char *out_ir) {
 
 
   LLVMPassManagerBuilderRef pass_manager_builder = LLVMPassManagerBuilderCreate();
-  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 0);
+  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 1);
   LLVMPassManagerRef pass_manager = LLVMCreatePassManager();
   LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
   LLVMPassManagerBuilderDispose(pass_manager_builder);

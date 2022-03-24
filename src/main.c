@@ -37,6 +37,7 @@ int main(int argc, char *argv[]) {
   init_primitive_types();
   register_parser_symbols();
   init_file_array();
+  bytecode_functions = init_Bytecode_Function_Ptr_Array(2);
 
   char *contents = add_file("./examples/test.eme");
   //printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
@@ -63,20 +64,20 @@ int main(int argc, char *argv[]) {
   bool main_found = false;
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
-    Compilation_Unit *unit = entry.data.file.unit;
+    Compilation_Unit *unit = entry.data.unit.unit;
     if(unit->type == UNIT_FUNCTION_SIGNATURE) {
       Compilation_Unit *body = unit->data.signature.body;
       type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
+      Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
+      assert(body->node->type == NODE_FUNCTION_DEFINITION);
+      bool is_main = n->symbol == st_get_id_of("eme", 3);
+      if(is_main) main_found = true;
       if(body->poisoned) {
         compilation_has_errors = true;
       } else {
-        print_bytecode_compilation_unit(body);
-        assert(body->node->type == NODE_FUNCTION_DEFINITION);
-        Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
-        if(n->symbol == st_get_id_of("eme", 3)) {
+        if(is_main) {
           main = *body->data.body.bytecode;
-          main_found = true;
         }
       }
     }
@@ -87,7 +88,12 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  printf("RETURNED: %lli\n", *((s64 *)interpret_bytecode_function(main, NULL)));
+  if(compilation_has_errors) {
+    printf("Compilation had errors. Exiting...\n");
+    exit(1);
+  }
+
+  printf("Result: %lli\n", *((s64 *)interpret_bytecode_function(main, NULL)));
 
   if(compilation_has_errors) {
     printf("\n\nThere were errors during compilation, exiting.\n");
@@ -95,7 +101,7 @@ int main(int argc, char *argv[]) {
   }
 
 
-  llvm_generate_module(*ast, out_obj, out_asm, out_ir);
+  llvm_generate_module(bytecode_functions, out_obj, out_asm, out_ir);
 
   return 0;
 }

@@ -69,6 +69,7 @@ typedef struct Type_Info {
       symbol name;
     } struct_;
     struct {
+      Compilation_Unit *definition_unit;
       Ast_Poly_Struct_Definition *definition;
       Scope *scope;
       Compilation_Unit_Ptr_Array members;

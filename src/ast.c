@@ -10,12 +10,20 @@ GENERATE_DARRAY_CODE(Ast_Node *, Ast_Node_Ptr_Array);
 GENERATE_DARRAY_CODE(Scope_Entry, Scope_Entry_Array);
 GENERATE_DARRAY_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Array);
 GENERATE_TABLE_CODE(Type, Type_Table);
+GENERATE_TABLE_CODE(Compilation_Unit *, Compilation_Unit_Ptr_Table);
+
 
 Ast_Node NULL_AST_NODE = {NODE_NULL, {-1,-1,-1}};
 
-Ast_Node *allocate_ast_node(Ast_Node_Type type, u32 size) {
+Ast_Node *allocate_ast_node_type(Ast_Node_Type type, u32 size) {
   Ast_Node *result = malloc(size);
   result->type = type;
+  return result;
+}
+
+Ast_Node *allocate_ast_node(Ast_Node *node, u32 size) {
+  Ast_Node *result = malloc(size);
+  memcpy(result, node, size);
   return result;
 }
 
@@ -121,6 +129,13 @@ void print_ast_node(Ast_Node *node) {
 
     case NODE_SYMBOL: {
       Ast_Symbol *n = (Ast_Symbol *)node;
+      print_symbol(n->symbol);
+      break;
+    }
+
+    case NODE_BIND_SYMBOL: {
+      Ast_Bind_Symbol *n = (Ast_Bind_Symbol *)node;
+      printf("$");
       print_symbol(n->symbol);
       break;
     }
@@ -263,6 +278,42 @@ void print_ast_node(Ast_Node *node) {
   }
 }
 
+void print_scope(Scope scope, bool print_entries) {
+  if(scope.has_parent) {
+    print_scope(*scope.parent, false);
+    printf(".");
+  }
+  switch(scope.type) {
+    case SYMBOL_SCOPE: printf("SYMBOL"); break;
+    case BASIC_SCOPE: printf("BASIC"); break;
+    case REGISTER_SCOPE: printf("REG"); break;
+    case UNIT_SCOPE: printf("UNIT"); break;
+    case STRUCT_SCOPE: printf("STRUCT"); break;
+    case TYPE_SCOPE: printf("TYPE"); break;
+    default: assert(false);
+  }
+  if(!print_entries) return;
+
+  printf(": ");
+  for(int i = 0; i < scope.entries.length; i++) {
+    if(i != 0) printf(", ");
+    Scope_Entry e = scope.entries.data[i];
+    print_symbol(e.symbol);
+    printf("{");
+    switch(scope.type) {
+      case SYMBOL_SCOPE: break;
+      case BASIC_SCOPE: print_type(e.data.basic.type); break;
+      case REGISTER_SCOPE: print_type(e.data.reg.type); break;
+      case UNIT_SCOPE: break;
+      case STRUCT_SCOPE: print_ast_node(e.data.struct_.node); break;
+      case TYPE_SCOPE: print_type(e.data.type.value); break;
+      default: assert(false);
+    }
+    printf("}");
+  }
+  printf(".");
+}
+
 void print_compilation_unit(Compilation_Unit *unit) {
   if(unit->poisoned) printf("POISONED:\n");
 
@@ -277,6 +328,12 @@ void print_compilation_unit(Compilation_Unit *unit) {
   else printf("not yet\n");
 
   switch(unit->type) {
+    case UNIT_POLY_FUNCTION: {
+      printf("Polymorphic function:\n");
+      print_ast_node(unit->node);
+      printf("\n");
+      break;
+    }
     case UNIT_FUNCTION_BODY: {
       printf("Function body:\n");
       print_ast_node(unit->node);
@@ -292,5 +349,122 @@ void print_compilation_unit(Compilation_Unit *unit) {
     default: {
       printf("Unknown type of compilation unit.\n");
     }
+  }
+}
+
+Scope copy_scope(Scope s, Scope *parent) {
+  Scope r = s;
+  switch(s.type) {
+    case SYMBOL_SCOPE:
+    case BASIC_SCOPE:
+    case REGISTER_SCOPE:
+    case TYPE_SCOPE:
+      break;
+    case UNIT_SCOPE:
+    case STRUCT_SCOPE:
+    default:
+      assert(false);
+  }
+  assert(r.has_parent);
+  r.parent = parent;
+  r.entries.length = s.entries.length;
+  r.entries.reserved = r.entries.length;
+  r.entries.data = malloc(r.entries.reserved *sizeof(Scope_Entry));
+  memcpy(r.entries.data, s.entries.data, s.entries.length*sizeof(Scope_Entry));
+  return r;
+}
+
+Ast_Node_Ptr_Array copy_ast_node_ptr_array(Ast_Node_Ptr_Array arr, Scope *scope) {
+  Ast_Node_Ptr_Array result = init_Ast_Node_Ptr_Array(arr.length > 2 ? arr.length : 2);
+  for(int i = 0; i < arr.length; i++) {
+    Ast_Node_Ptr_Array_push(&result, copy_ast_node(arr.data[i], scope));
+  }
+  return result;
+}
+
+Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
+  switch(node->type) {
+    case NODE_NULL: {
+      return allocate_ast_node(node, sizeof(Ast_Node));
+    }
+    case NODE_LITERAL: {
+      return allocate_ast_node(node, sizeof(Ast_Literal));
+    }
+    case NODE_BINARY_OP: {
+      Ast_Binary_Op *r = (Ast_Binary_Op *)allocate_ast_node(node, sizeof(Ast_Binary_Op));
+      r->first = copy_ast_node(r->first, scope);
+      r->second = copy_ast_node(r->second, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_UNARY_OP: {
+      Ast_Unary_Op *r = (Ast_Unary_Op *)allocate_ast_node(node, sizeof(Ast_Unary_Op));
+      r->operand = copy_ast_node(r->operand, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_IF: {
+      Ast_If *r = (Ast_If *)allocate_ast_node(node, sizeof(Ast_If));
+      r->cond = copy_ast_node(r->cond, scope);
+      r->first = copy_ast_node(r->first, scope);
+      r->second = copy_ast_node(r->second, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_WHILE: {
+      Ast_While *r = (Ast_While *)allocate_ast_node(node, sizeof(Ast_While));
+      r->cond = copy_ast_node(r->cond, scope);
+      r->body = copy_ast_node(r->body, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_FUNCTION_CALL: {
+      Ast_Function_Call *r = (Ast_Function_Call *)allocate_ast_node(node, sizeof(Ast_Function_Call));
+      r->identifier = copy_ast_node(r->identifier, scope);
+      r->arguments = copy_ast_node_ptr_array(r->arguments, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_SYMBOL: {
+      return allocate_ast_node(node, sizeof(Ast_Symbol));
+    }
+    case NODE_BIND_SYMBOL: {
+      return allocate_ast_node(node, sizeof(Ast_Bind_Symbol));
+    }
+    case NODE_BLOCK: {
+      Ast_Block *r = (Ast_Block *)allocate_ast_node(node, sizeof(Ast_Block));
+      r->scope = copy_scope(r->scope, scope);
+      r->statements = copy_ast_node_ptr_array(r->statements, scope);
+      return (Ast_Node *)r;
+    }
+
+    case NODE_PRIMITIVE_TYPE: {
+      return allocate_ast_node(node, sizeof(Ast_Primitive_Type));
+    }
+
+    case NODE_TYPED_DECL: {
+      Ast_Typed_Decl *r = (Ast_Typed_Decl *)allocate_ast_node(node, sizeof(Ast_Typed_Decl));
+      r->type_node = copy_ast_node(r->type_node, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_UNTYPED_DECL_SET: {
+      Ast_Untyped_Decl_Set *r = (Ast_Untyped_Decl_Set *)allocate_ast_node(node, sizeof(Ast_Untyped_Decl_Set));
+      r->value = copy_ast_node(r->value, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_TYPED_DECL_SET: {
+      Ast_Typed_Decl_Set *r = (Ast_Typed_Decl_Set *)allocate_ast_node(node, sizeof(Ast_Typed_Decl_Set));
+      r->type_node = copy_ast_node(r->type_node, scope);
+      r->value = copy_ast_node(r->value, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_FUNCTION_PARAMETER: {
+      Ast_Function_Parameter *r = (Ast_Function_Parameter *)allocate_ast_node(node, sizeof(Ast_Function_Parameter));
+      r->type_node = copy_ast_node(r->type_node, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_RETURN: {
+      Ast_Return *r = (Ast_Return *)allocate_ast_node(node, sizeof(Ast_Return));
+      r->value = copy_ast_node(r->value, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_FUNCTION_DEFINITION:
+    case NODE_POLY_STRUCT_DEFINITION:
+      assert(false);
   }
 }

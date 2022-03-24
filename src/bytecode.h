@@ -68,8 +68,8 @@ typedef struct Bytecode_Instruction {
 
     struct {
       Bytecode_Function *to;
-      bool keep_return_value;
       u32 reg;
+      bool keep_return_value;
     } call;
 
     struct {
@@ -105,13 +105,15 @@ typedef struct Bytecode_Function {
   // For a function with n arguments, the arguments are passed in through the first n registers.
   u32 param_count;
   u32 entry_block;
+  symbol unique_name;
   Type_Array register_types;
   Bytecode_Block_Array blocks;
   Type return_type;
   LLVMValueRef llvm_function;
 } Bytecode_Function;
 
-GENERATE_DARRAY_HEADER(Bytecode_Function, Bytecode_Function_Array);
+GENERATE_DARRAY_HEADER(Bytecode_Function *, Bytecode_Function_Ptr_Array);
+Bytecode_Function_Ptr_Array bytecode_functions; // should be initialized as empty in main 
 
 // Refers to the translation of an ast block to bytecode, where entry is the
 // generated entry block and exit is the generated exit block.

@@ -125,6 +125,7 @@ void print_type_info(Type_Info t) {
   switch(t.type) {
     case TYPE_UNKNOWN: printf("unknown"); break;
     case TYPE_NOTHING: printf("nothing"); break;
+    case TYPE_POISON: printf("poison"); break;
     case TYPE_INT: {
       if(t.data.integer.is_signed) printf("s%i", t.data.integer.width);
       else printf("u%i", t.data.integer.width);
@@ -138,11 +139,11 @@ void print_type_info(Type_Info t) {
       print_symbol(t.data.poly_instance.definition->symbol);
       Scope *s = t.data.poly_instance.scope;
       printf("(");
-      assert(s->type == POLY_INSTANCE_SCOPE);
+      assert(s->type == TYPE_SCOPE);
       for(int i = 0; i < s->entries.length; i++) {
         if(i > 0) printf(", ");
         Scope_Entry e = s->entries.data[i];
-        print_type(e.data.poly_instance.type);
+        print_type(e.data.type.value);
       }
       printf(")");
       break;
