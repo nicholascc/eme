@@ -13,7 +13,7 @@ GENERATE_DARRAY_CODE(Bytecode_Instruction, Bytecode_Instruction_Array);
 GENERATE_DARRAY_CODE(Bytecode_Block, Bytecode_Block_Array);
 GENERATE_DARRAY_CODE(Bytecode_Function *, Bytecode_Function_Ptr_Array);
 
-Scope_Entry * get_entry_of_identifier_register_scope(symbol symbol, Scope *scope, Location error_location) {
+Scope_Entry *get_entry_of_identifier_register_scope(symbol symbol, Scope *scope, Location error_location) {
   Scope *found_scope;
   Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, error_location, &found_scope);
   assert(found_scope->type == REGISTER_SCOPE);
@@ -52,6 +52,10 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
     }
     case BC_SET: {
       printf("set r%i <- r%i\n", inst.data.set.reg_a, inst.data.set.reg_b);
+      break;
+    }
+    case BC_BIT_CAST: {
+      printf("bit_cast r%i <- r%i\n", inst.data.bit_cast.reg_a, inst.data.bit_cast.reg_b);
       break;
     }
     case BC_REF_TO: {
@@ -181,6 +185,15 @@ u32 add_bin_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u
   return a;
 }
 
+u32 add_set_literal_instruction(Bytecode_Function *fn, u32 *block, int value, Type type, Ast_Node *node) {
+  Bytecode_Instruction inst;
+  inst.type = BC_SET_LITERAL;
+  inst.data.set_literal.lit_b = value;
+  inst.data.set_literal.reg_a = add_register(fn, solidify_type(type, *node));
+  add_instruction(&fn->blocks.data[*block], inst);
+  return inst.data.set_literal.reg_a;
+}
+
 // Takes a register containing type ^^^X, ^^X, ^X or X, and converts it to ^X
 // either by referencing or dereferencing it.
 u32 ref_or_deref_to_single_ptr(u32 ptr_reg, u32 *block, Bytecode_Function *fn) {
@@ -275,11 +288,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_LITERAL: {
       Ast_Literal *n = (Ast_Literal *)node;
       Bytecode_Instruction inst;
-      inst.type = BC_SET_LITERAL;
-      inst.data.set_literal.lit_b = n->value;
-      inst.data.set_literal.reg_a = add_register(fn, solidify_type(n->type, *node));
-      add_instruction(&fn->blocks.data[*block], inst);
-      return inst.data.set_literal.reg_a;
+      return add_set_literal_instruction(fn, block, n->value, n->type, node);
     }
     case NODE_BINARY_OP: {
       Ast_Binary_Op *n = (Ast_Binary_Op *)node;
@@ -591,26 +600,45 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     }
     case NODE_FUNCTION_CALL: {
       Ast_Function_Call *n = (Ast_Function_Call *)node;
+      { // check for built-ins like size_of
+        symbol symbol = ((Ast_Symbol *)n->identifier)->symbol;
+        if(symbol == st_get_id_of("size_of", -1)) {
+          assert(n->arguments.length == 1);
+          Type size_type = n->return_type;
+          assert(size_type.info->type == TYPE_UNKNOWN_INT);
+          s64 size = size_type.info->data.unknown_int;
+          return add_set_literal_instruction(fn, block, size, size_type, node);
+        } else if(symbol == st_get_id_of("bit_cast", -1)) {
+          assert(n->arguments.length == 2);
+          u32 from_reg = generate_bytecode_expr(n->arguments.data[1], block, fn, scope);
+          u32 to_reg = add_register(fn, n->return_type);
+
+          Bytecode_Instruction inst;
+          inst.type = BC_BIT_CAST;
+          inst.data.set.reg_a = to_reg;
+          inst.data.set.reg_b = from_reg;
+          add_instruction(&fn->blocks.data[*block], inst);
+          return to_reg;
+        }
+      }
+
       Compilation_Unit *body = n->body;
       type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
-
       u32 *arg_registers = alloca(n->arguments.length * sizeof(u32));
       for(int i = 0; i < n->arguments.length; i++) {
         arg_registers[i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
       }
-
-      Type return_type = ((Ast_Function_Definition *)body->node)->return_type;
       u32 result_reg;
-      if(return_type.info->type == TYPE_NOTHING)
+      if(n->return_type.info->type == TYPE_NOTHING)
         result_reg = -1;
       else
-        result_reg = add_register(fn, return_type);
+        result_reg = add_register(fn, n->return_type);
       {
         Bytecode_Instruction inst;
         inst.type = BC_CALL;
         inst.data.call.to = body->data.body.bytecode;
-        inst.data.call.keep_return_value = return_type.info->type != TYPE_NOTHING;
+        inst.data.call.keep_return_value = n->return_type.info->type != TYPE_NOTHING;
         inst.data.call.reg = result_reg;
         add_instruction(&fn->blocks.data[*block], inst);
       }

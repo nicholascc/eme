@@ -240,6 +240,7 @@ typedef struct Ast_Function_Call {
   Ast_Node *identifier;
   Compilation_Unit *body;
   Ast_Node_Ptr_Array arguments;
+  Type return_type;
 } Ast_Function_Call;
 
 typedef struct Ast_Primitive_Type {

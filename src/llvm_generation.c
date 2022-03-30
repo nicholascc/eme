@@ -203,6 +203,19 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           break;
         }
 
+        case BC_BIT_CAST: {
+          Type a_type = fn.register_types.data[inst.data.bit_cast.reg_a];
+          Type b_type = fn.register_types.data[inst.data.bit_cast.reg_b];
+          // to do this cast, we just cast the stack pointer we're using, and then
+          // copy the value at that stack pointer to our new stack 'register'.
+          Type new_ptr_type = a_type;
+          new_ptr_type.reference_count++;
+          LLVMValueRef new_ptr = LLVMBuildBitCast(builder, r[inst.data.bit_cast.reg_b], llvm_type_of(new_ptr_type), "");
+          LLVMValueRef a = LLVMBuildLoad(builder, new_ptr, "");
+          LLVMBuildStore(builder, a, r[inst.data.bit_cast.reg_a]);
+          break;
+        }
+
         case BC_REF_TO: {
           Type a_type = fn.register_types.data[inst.data.unary_op.reg_a];
           Type b_type = fn.register_types.data[inst.data.unary_op.reg_b];

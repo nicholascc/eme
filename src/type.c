@@ -31,6 +31,7 @@ u32 size_of_type(Type t) {
         else if(info->type == TYPE_POLY_INSTANCE)
           members = info->data.poly_instance.members;
 
+        int final_alignment = 1;
         info->size = 0;
         for(int i = 0; i < members.length; i++) {
           Compilation_Unit *unit = members.data[i];
@@ -38,12 +39,15 @@ u32 size_of_type(Type t) {
           type_infer_compilation_unit(unit);
           s32 type_size = size_of_type(unit->data.struct_member.type);
           s32 alignment = alignment_of_size(type_size);
+          if(alignment > final_alignment) final_alignment = alignment;
           if(info->size % alignment != 0) info->size += alignment - info->size % alignment;
           assert(info->size % alignment == 0);
           unit->data.struct_member.offset = info->size;
 
           info->size += type_size;
         }
+        // finally, align to that final alignment for use in arrays.
+        if(info->size % final_alignment != 0) info->size += final_alignment - info->size % final_alignment;
         break;
       }
       case TYPE_INT:

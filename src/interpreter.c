@@ -90,7 +90,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
           if(c == 0) assert(false); // TODO: HANDLE INTERPRETER ERRORS PROPERLY
           a = b / c;
         } else assert(false);
-        
+
         memcpy(&local[r_to_id[reg_a]], &a, size_of_type(fn.register_types.data[reg_a]));
         break;
       }
@@ -135,6 +135,13 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         u32 a_size = size_of_type(fn.register_types.data[reg_a]);
         assert(a_size <= 8);
         memcpy(&local[r_to_id[reg_a]], &inst.data.set_literal.lit_b, a_size);
+        break;
+      }
+      case BC_BIT_CAST: {
+        u32 reg_a = inst.data.bit_cast.reg_a;
+        u32 reg_b = inst.data.bit_cast.reg_b;
+        u32 size = size_of_type(fn.register_types.data[reg_a]);
+        memcpy(&local[r_to_id[reg_a]], &local[r_to_id[reg_b]], size);
         break;
       }
       case BC_REF_TO: {

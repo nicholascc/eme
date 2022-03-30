@@ -19,6 +19,8 @@ typedef enum Bytecode_Instruction_Type {
   BC_SET,
   BC_SET_LITERAL,
 
+  BC_BIT_CAST,
+
   BC_REF_TO, // reference to the register
 
   BC_GET_MEMBER_PTR, // behaves similar to llvm getelementptr, taking a pointer
@@ -48,6 +50,11 @@ typedef struct Bytecode_Instruction {
       u32 reg_a;
       s64 lit_b;
     } set_literal;
+
+    struct {
+      u32 reg_a;
+      u32 reg_b;
+    } bit_cast;
 
     struct {
       u32 reg_a;
@@ -113,7 +120,7 @@ typedef struct Bytecode_Function {
 } Bytecode_Function;
 
 GENERATE_DARRAY_HEADER(Bytecode_Function *, Bytecode_Function_Ptr_Array);
-Bytecode_Function_Ptr_Array bytecode_functions; // should be initialized as empty in main 
+Bytecode_Function_Ptr_Array bytecode_functions; // should be initialized as empty in main
 
 // Refers to the translation of an ast block to bytecode, where entry is the
 // generated entry block and exit is the generated exit block.

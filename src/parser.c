@@ -482,6 +482,7 @@ Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *identifie
   assert(identifier->type == NODE_SYMBOL);
   n->identifier = identifier;
   n->arguments = args;
+  n->return_type = UNKNOWN_TYPE;
 
   return (Ast_Node *)n;
 }

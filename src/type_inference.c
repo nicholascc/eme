@@ -93,13 +93,13 @@ Type solidify_type(Type x, Ast_Node node) {
 
 
 
-Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
-  switch(expr->type) {
+Type evaluate_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
+  switch(node->type) {
     case NODE_UNARY_OP: {
-      Ast_Unary_Op *n = (Ast_Unary_Op *)expr;
+      Ast_Unary_Op *n = (Ast_Unary_Op *)node;
       switch(n->operator) {
         case OPREFERENCE: {
-          Type t = evaluate_type_expr(n->operand, scope, unit_poisoned);
+          Type t = evaluate_type_expr(n->operand, scope, unit, unit_poisoned);
           t.reference_count++;
           return t;
         }
@@ -108,7 +108,7 @@ Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
       }
     }
     case NODE_SYMBOL: {
-      Ast_Symbol *n = (Ast_Symbol *)expr;
+      Ast_Symbol *n = (Ast_Symbol *)node;
       Scope *found_scope;
       Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, n->n.loc, &found_scope);
       if(found_scope->type == UNIT_SCOPE) {
@@ -129,7 +129,24 @@ Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
       } else assert(false);
     }
     case NODE_FUNCTION_CALL: {
-      Ast_Function_Call *n = (Ast_Function_Call *)expr;
+      Ast_Function_Call *n = (Ast_Function_Call *)node;
+      symbol identifier;
+      {
+        Ast_Symbol *sym = (Ast_Symbol *)n->identifier;
+        assert(sym->n.type == NODE_SYMBOL);
+        identifier = sym->symbol;
+      }
+      // check for built-ins like type_of
+      if(identifier == st_get_id_of("type_of", -1)) {
+        if(n->arguments.length != 1) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I expected 1 argument to this function, but got %i instead.\n", n->arguments.length);
+          n->return_type = POISON_TYPE;
+          return n->return_type;
+        }
+        return infer_type_of_expr(n->arguments.data[0], scope, unit, true, unit_poisoned);
+      }
+
       Compilation_Unit *definition = n->body;
       assert(definition->type == UNIT_POLY_STRUCT);
       type_infer_compilation_unit(definition);
@@ -141,7 +158,7 @@ Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
       u64 hash;
       for(int i = 0; i < n->arguments.length; i++) {
         Ast_Node *p = n->arguments.data[i];
-        Type t = evaluate_type_expr(p, scope, unit_poisoned);
+        Type t = evaluate_type_expr(p, scope, unit, unit_poisoned);
         if(i == 0) hash = hash_type(t);
         else hash = hash_combine(hash, hash_type(t));
       }
@@ -183,7 +200,7 @@ Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
         Scope_Entry e;
         e.symbol = param_entry.symbol;
         if(param_entry.data.basic.type.info->type == TYPE_FTYPE) {
-          e.data.type.value = evaluate_type_expr(n->arguments.data[i], scope, unit_poisoned);
+          e.data.type.value = evaluate_type_expr(n->arguments.data[i], scope, unit, unit_poisoned);
         } else if(param_entry.data.basic.type.info->type == TYPE_POISON) {
           *unit_poisoned = true;
         } else assert(false);
@@ -219,29 +236,29 @@ Type evaluate_type_expr(Ast_Node *expr, Scope *scope, bool *unit_poisoned) {
       return t;
     }
     case NODE_BIND_SYMBOL: {
-      Ast_Bind_Symbol *n = (Ast_Bind_Symbol *)expr;
+      Ast_Bind_Symbol *n = (Ast_Bind_Symbol *)node;
       Scope *found_scope;
       Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, n->n.loc, &found_scope);
       assert(found_scope->type == TYPE_SCOPE);
       return e->data.type.value;
     }
     case NODE_PRIMITIVE_TYPE: {
-      Ast_Primitive_Type *n = (Ast_Primitive_Type *) expr;
+      Ast_Primitive_Type *n = (Ast_Primitive_Type *) node;
       return n->type;
     }
     default:
-      type_inference_error("I cannot evaluate this as a type expression.", expr->loc, unit_poisoned);
+      type_inference_error("I cannot evaluate this as a type expression.", node->loc, unit_poisoned);
       exit(1);
   }
 }
 
-Type type_of_type_expr(Ast_Node *expr, Scope *scope, Compilation_Unit *unit, Location loc,  bool *unit_poisoned) {
-  Type type = infer_type_of_expr(expr, scope, unit, true, unit_poisoned);
+Type type_of_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, Location loc,  bool *unit_poisoned) {
+  Type type = infer_type_of_expr(node, scope, unit, true, unit_poisoned);
   if(type.reference_count != 0 || type.info->type != TYPE_FTYPE) {
     error_cannot_implicitly_cast(type, FTYPE_TYPE, loc, false, unit_poisoned);
     return POISON_TYPE;
   }
-  return evaluate_type_expr(expr, scope, unit_poisoned);
+  return evaluate_type_expr(node, scope, unit, unit_poisoned);
 }
 
 Type infer_type_of_decl(Ast_Node *decl, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
@@ -716,151 +733,205 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
       Ast_Function_Call *n = (Ast_Function_Call *)node;
       Scope_Entry *e;
       Scope *found_scope;
+      symbol identifier;
       {
         Ast_Symbol *sym = (Ast_Symbol *)n->identifier;
         assert(sym->n.type == NODE_SYMBOL);
-        // Ignoring overriding functions and shadowing variables for now.
-        e = get_entry_of_identifier_in_scope(sym->symbol, scope, sym->n.loc, &found_scope);
-        assert(found_scope->type == UNIT_SCOPE);
+        identifier = sym->symbol;
       }
 
-      Compilation_Unit *def_unit = e->data.unit.unit;
-      if(def_unit->type == UNIT_FUNCTION_SIGNATURE) {
-        n->body = def_unit->data.signature.body;
-        type_infer_compilation_unit(def_unit);
-
-        Ast_Function_Definition *def = (Ast_Function_Definition *)def_unit->node;
-        if(n->arguments.length != def->parameters.length) {
+      // check for built-ins like size_of
+      if(identifier == st_get_id_of("size_of", -1)) {
+        if(n->arguments.length != 1) {
           type_inference_error(NULL, node->loc, unit_poisoned);
-          printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length,n->arguments.length);
-        } else {
-          for(int i = 0; i < n->arguments.length; i++) {
-            Type defined = def->parameter_scope.entries.data[i].data.reg.type;
-            Type passed = solidify_type(infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned), *n->arguments.data[i]);
-            if(!can_implicitly_cast_type(passed, defined))
-              error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
-          }
+          printf("I expected 1 argument to this function, but got %i instead.\n", n->arguments.length);
+          n->return_type = POISON_TYPE;
+          return n->return_type;
         }
-        return def->return_type;
-      } else if(def_unit->type == UNIT_POLY_FUNCTION) {
-        type_infer_compilation_unit(def_unit);
 
-        Ast_Function_Definition *def = (Ast_Function_Definition *)def_unit->node;
-        if(n->arguments.length != def->parameters.length) {
-          type_inference_error(NULL, node->loc, unit_poisoned);
-          printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length, n->arguments.length);
-          return POISON_TYPE;
-        } else {
-          Type *argument_types = malloc(sizeof(Type) * n->arguments.length);
-          {
-            bool poisoned = false;
-            for(int i = 0; i < n->arguments.length; i++) {
-              argument_types[i] = solidify_type(infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned), *n->arguments.data[i]);
-              if(argument_types[i].info->type == TYPE_POISON) poisoned = true;
-            }
-            if(poisoned) return POISON_TYPE;
-          }
-          // we establish a 1:1 mapping from scope entries in the BOUND_TYPE_SCOPE scope to their actual types, placed in the BOUND_TYPE_INSTANCE_SCOPE
-          Scope instance_scope;
-          instance_scope.type = TYPE_SCOPE;
-          instance_scope.has_parent = true;
-          assert(def->bound_type_scope.has_parent);
-          instance_scope.parent = def->bound_type_scope.parent;
-          instance_scope.entries = init_Scope_Entry_Array(2);
-          for(int i = 0; i < def->bound_type_scope.entries.length; i++) {
-            Scope_Entry e;
-            e.symbol = def->bound_type_scope.entries.data[i].symbol;
-            e.data.type.value = UNKNOWN_TYPE;
-            Scope_Entry_Array_push(&instance_scope.entries, e);
-          }
-          // then do the binding itself...
-          {
-            bool matches = true;
-            for(int i = 0; i < def->parameters.length; i++) {
-              Ast_Function_Parameter *param = (Ast_Function_Parameter *)def->parameters.data[i];
-              bool this_argument_matches = assign_bound_type_to_poly_function_arguments(&def->bound_type_scope, &instance_scope, param->type_node, argument_types[i]);
-              if(!this_argument_matches) {
-                type_inference_error("This argument does not match with the polymorphic function's signature.", n->arguments.data[i]->loc, unit_poisoned);
-                matches = false;
-              }
-            }
-            if(!matches) {
-              free(instance_scope.entries.data);
-              return POISON_TYPE;
-            }
-          }
-          // then recheck to ensure that everything matches, now that we know the types of all the $X expressions.
-          for(int i = 0; i < n->arguments.length; i++) {
-            Ast_Function_Parameter *param = (Ast_Function_Parameter *)def->parameters.data[i];
-            Type defined = type_of_type_expr(param->type_node, &instance_scope, unit, def->parameters.data[i]->loc, unit_poisoned);
-            Type passed = argument_types[i];
-            if(!can_implicitly_cast_type(passed, defined))
-              error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
-          }
-
-          // if we've gotten this far, everything is good for actually calling this function.
-
-          u64 hash;
-          for(int i = 0; i < n->arguments.length; i++) {
-            if(i == 0) hash = hash_type(argument_types[i]);
-            else hash = hash_combine(hash, hash_type(argument_types[i]));
-          }
-          // now we get the instance compilation unit, perhaps we have to make it ourselves.
-          Compilation_Unit *instance;
-          if(get_Compilation_Unit_Ptr_Table(&def_unit->data.poly_function_def.instances, hash, &instance)) {
-            free(instance_scope.entries.data);
-            printf("DEDUPLICATED\n");
-          } else {
-            Ast_Function_Definition *new_def = (Ast_Function_Definition *)allocate_ast_node((Ast_Node *)def, sizeof(Ast_Function_Definition));
-
-            instance = allocate_null_compilation_unit();
-            instance->type = UNIT_FUNCTION_BODY;
-            instance->type_inferred = false;
-            instance->type_inference_seen = false;
-            instance->bytecode_generated = false;
-            instance->bytecode_generating = false;
-            instance->poisoned = false;
-            instance->node = (Ast_Node *)new_def;
-            instance->scope = def_unit->scope;
-            instance->data.body.signature = def_unit;
-            instance->data.body.bytecode = malloc(sizeof(Bytecode_Function));
-
-            set_Compilation_Unit_Ptr_Table(&def_unit->data.poly_function_def.instances, hash, instance);
-            new_def->def_type = FN_POLY_INSTANCE;
-            new_def->bound_type_scope = instance_scope;
-            new_def->parameter_scope = copy_scope(def->parameter_scope, &new_def->bound_type_scope);
-
-            new_def->parameters = copy_ast_node_ptr_array(def->parameters, &new_def->parameter_scope);
-            infer_types_of_function_parameters(new_def->parameters, &new_def->parameter_scope, instance, &instance->poisoned);
-
-            new_def->return_type_node = copy_ast_node(def->return_type_node, &new_def->parameter_scope);
-            new_def->return_type = type_of_type_expr(new_def->return_type_node, &new_def->parameter_scope, instance, new_def->return_type_node->loc, &instance->poisoned);
-
-            new_def->body = copy_ast_node(def->body, &new_def->parameter_scope);
-          }
-
-          n->body = instance;
-          Ast_Function_Definition *instance_def = (Ast_Function_Definition *)instance->node;
-          return instance_def->return_type;
+        Type passed = infer_type_of_expr(n->arguments.data[0], scope, unit, true, unit_poisoned);
+        if(!can_implicitly_cast_type(passed, FTYPE_TYPE)) {
+          error_cannot_implicitly_cast(passed, FTYPE_TYPE, n->arguments.data[0]->loc, false, unit_poisoned);
         }
-      } else if(def_unit->type == UNIT_POLY_STRUCT) {
-        n->body = def_unit;
-        type_infer_compilation_unit(def_unit);
-
-        Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)def_unit->node;
-        if(n->arguments.length != def->parameters.length) {
+        Type value_passed = type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned);
+        n->return_type = allocate_unknown_int_type(size_of_type(value_passed));
+        return POISON_TYPE;
+      } else if(identifier == st_get_id_of("type_of", -1)) {
+        if(n->arguments.length != 1) {
           type_inference_error(NULL, node->loc, unit_poisoned);
-          printf("I expected %i arguments to this polymorphic struct, but got %i instead.\n", def->parameters.length, n->arguments.length);
-        } else {
-          for(int i = 0; i < n->arguments.length; i++) {
-            Type defined = def->param_scope.entries.data[i].data.basic.type;
-            Type passed = infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned);
-            if(!can_implicitly_cast_type(passed, defined))
-              error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
-          }
+          printf("I expected 1 argument to this function, but got %i instead.\n", n->arguments.length);
+          n->return_type = POISON_TYPE;
+          return n->return_type;
         }
         return FTYPE_TYPE;
-      } else assert(false);
+      } else if(identifier == st_get_id_of("bit_cast", -1)) {
+        if(n->arguments.length != 2) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I expected 2 arguments to this function, but got %i instead.\n", n->arguments.length);
+          n->return_type = POISON_TYPE;
+          return n->return_type;
+        }
+        Type to = solidify_type(type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned), *n->arguments.data[0]);
+        Type from = solidify_type(infer_type_of_expr(n->arguments.data[1], scope, unit, true, unit_poisoned), *n->arguments.data[1]);
+        if(size_of_type(to) != size_of_type(from)) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I cannot bit_cast from ");
+          print_type(from);
+          printf(" (%i bytes wide) -> ", size_of_type(from));
+          print_type(to);
+          printf(" (%i bytes wide) because they are of different sizes.\n", size_of_type(to));
+          n->return_type = POISON_TYPE;
+          return n->return_type;
+        }
+        n->return_type = to;
+        return to;
+      } else {
+        // Ignoring overriding functions and shadowing variables for now.
+        e = get_entry_of_identifier_in_scope(identifier, scope, n->identifier->loc, &found_scope);
+        assert(found_scope->type == UNIT_SCOPE);
+
+        Compilation_Unit *def_unit = e->data.unit.unit;
+        if(def_unit->type == UNIT_FUNCTION_SIGNATURE) {
+          n->body = def_unit->data.signature.body;
+          type_infer_compilation_unit(def_unit);
+
+          Ast_Function_Definition *def = (Ast_Function_Definition *)def_unit->node;
+          if(n->arguments.length != def->parameters.length) {
+            type_inference_error(NULL, node->loc, unit_poisoned);
+            printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length,n->arguments.length);
+          } else {
+            for(int i = 0; i < n->arguments.length; i++) {
+              Type defined = def->parameter_scope.entries.data[i].data.reg.type;
+              Type passed = solidify_type(infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned), *n->arguments.data[i]);
+              if(!can_implicitly_cast_type(passed, defined))
+                error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+            }
+          }
+          n->return_type = def->return_type;
+          return def->return_type;
+        } else if(def_unit->type == UNIT_POLY_FUNCTION) {
+          type_infer_compilation_unit(def_unit);
+
+          Ast_Function_Definition *def = (Ast_Function_Definition *)def_unit->node;
+          if(n->arguments.length != def->parameters.length) {
+            type_inference_error(NULL, node->loc, unit_poisoned);
+            printf("I expected %i arguments to this function, but got %i instead.\n", def->parameters.length, n->arguments.length);
+            return POISON_TYPE;
+          } else {
+            Type *argument_types = malloc(sizeof(Type) * n->arguments.length);
+            {
+              bool poisoned = false;
+              for(int i = 0; i < n->arguments.length; i++) {
+                argument_types[i] = solidify_type(infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned), *n->arguments.data[i]);
+                if(argument_types[i].info->type == TYPE_POISON) poisoned = true;
+              }
+              if(poisoned) return POISON_TYPE;
+            }
+            // we establish a 1:1 mapping from scope entries in the BOUND_TYPE_SCOPE scope to their actual types, placed in the BOUND_TYPE_INSTANCE_SCOPE
+            Scope instance_scope;
+            instance_scope.type = TYPE_SCOPE;
+            instance_scope.has_parent = true;
+            assert(def->bound_type_scope.has_parent);
+            instance_scope.parent = def->bound_type_scope.parent;
+            instance_scope.entries = init_Scope_Entry_Array(2);
+            for(int i = 0; i < def->bound_type_scope.entries.length; i++) {
+              Scope_Entry e;
+              e.symbol = def->bound_type_scope.entries.data[i].symbol;
+              e.data.type.value = UNKNOWN_TYPE;
+              Scope_Entry_Array_push(&instance_scope.entries, e);
+            }
+            // then do the binding itself...
+            {
+              bool matches = true;
+              for(int i = 0; i < def->parameters.length; i++) {
+                Ast_Function_Parameter *param = (Ast_Function_Parameter *)def->parameters.data[i];
+                bool this_argument_matches = assign_bound_type_to_poly_function_arguments(&def->bound_type_scope, &instance_scope, param->type_node, argument_types[i]);
+                if(!this_argument_matches) {
+                  type_inference_error("This argument does not match with the polymorphic function's signature.", n->arguments.data[i]->loc, unit_poisoned);
+                  matches = false;
+                }
+              }
+              if(!matches) {
+                free(instance_scope.entries.data);
+                return POISON_TYPE;
+              }
+            }
+            // then recheck to ensure that everything matches, now that we know the types of all the $X expressions.
+            for(int i = 0; i < n->arguments.length; i++) {
+              Ast_Function_Parameter *param = (Ast_Function_Parameter *)def->parameters.data[i];
+              Type defined = type_of_type_expr(param->type_node, &instance_scope, unit, def->parameters.data[i]->loc, unit_poisoned);
+              Type passed = argument_types[i];
+              if(!can_implicitly_cast_type(passed, defined))
+                error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+            }
+
+            // if we've gotten this far, everything is good for actually calling this function.
+
+            u64 hash;
+            for(int i = 0; i < n->arguments.length; i++) {
+              if(i == 0) hash = hash_type(argument_types[i]);
+              else hash = hash_combine(hash, hash_type(argument_types[i]));
+            }
+            // now we get the instance compilation unit, perhaps we have to make it ourselves.
+            Compilation_Unit *instance;
+            if(get_Compilation_Unit_Ptr_Table(&def_unit->data.poly_function_def.instances, hash, &instance)) {
+              free(instance_scope.entries.data);
+              printf("DEDUPLICATED\n");
+            } else {
+              Ast_Function_Definition *new_def = (Ast_Function_Definition *)allocate_ast_node((Ast_Node *)def, sizeof(Ast_Function_Definition));
+
+              instance = allocate_null_compilation_unit();
+              instance->type = UNIT_FUNCTION_BODY;
+              instance->type_inferred = false;
+              instance->type_inference_seen = false;
+              instance->bytecode_generated = false;
+              instance->bytecode_generating = false;
+              instance->poisoned = false;
+              instance->node = (Ast_Node *)new_def;
+              instance->scope = def_unit->scope;
+              instance->data.body.signature = def_unit;
+              instance->data.body.bytecode = malloc(sizeof(Bytecode_Function));
+
+              set_Compilation_Unit_Ptr_Table(&def_unit->data.poly_function_def.instances, hash, instance);
+              new_def->def_type = FN_POLY_INSTANCE;
+              new_def->bound_type_scope = instance_scope;
+              new_def->parameter_scope = copy_scope(def->parameter_scope, &new_def->bound_type_scope);
+
+              new_def->parameters = copy_ast_node_ptr_array(def->parameters, &new_def->parameter_scope);
+              infer_types_of_function_parameters(new_def->parameters, &new_def->parameter_scope, instance, &instance->poisoned);
+
+              new_def->return_type_node = copy_ast_node(def->return_type_node, &new_def->parameter_scope);
+              new_def->return_type = type_of_type_expr(new_def->return_type_node, &new_def->parameter_scope, instance, new_def->return_type_node->loc, &instance->poisoned);
+
+              new_def->body = copy_ast_node(def->body, &new_def->parameter_scope);
+            }
+
+            n->body = instance;
+            Ast_Function_Definition *instance_def = (Ast_Function_Definition *)instance->node;
+            n->return_type = instance_def->return_type;
+            return instance_def->return_type;
+          }
+        } else if(def_unit->type == UNIT_POLY_STRUCT) {
+          n->body = def_unit;
+          type_infer_compilation_unit(def_unit);
+
+          Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)def_unit->node;
+          if(n->arguments.length != def->parameters.length) {
+            type_inference_error(NULL, node->loc, unit_poisoned);
+            printf("I expected %i arguments to this polymorphic struct, but got %i instead.\n", def->parameters.length, n->arguments.length);
+          } else {
+            for(int i = 0; i < n->arguments.length; i++) {
+              Type defined = def->param_scope.entries.data[i].data.basic.type;
+              Type passed = infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned);
+              if(!can_implicitly_cast_type(passed, defined))
+                error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+            }
+          }
+          n->return_type = FTYPE_TYPE;
+          return FTYPE_TYPE;
+        } else assert(false);
+      }
+      assert(false);
     }
 
     case NODE_BIND_SYMBOL: {
