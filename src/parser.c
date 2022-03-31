@@ -944,6 +944,9 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
 }
 
 Ast_Node *parse_foreign_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
+  Token def_type = peek_token(r);
+  if(def_type.type != TFN) error_unexpected_token(def_type);
+  
   Token open_paren = peek_token(r);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 
