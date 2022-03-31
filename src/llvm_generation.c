@@ -76,18 +76,40 @@ inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, T
 
 
 // the compilation unit supplied here must be a function body.
-void generate_llvm_function_signature(LLVMModuleRef mod, Bytecode_Function *fn) {
-  LLVMTypeRef *arg_types = malloc(fn->param_count * sizeof(LLVMTypeRef));
-  for(int i = 0; i < fn->param_count; i++) {
-    arg_types[i] = llvm_type_of(fn->register_types.data[i]);
+void generate_llvm_function_signature(LLVMModuleRef mod, Bytecode_Unit *unit) {
+  switch(unit->type) {
+    case BYTECODE_FUNCTION: {
+      Bytecode_Function *u = (Bytecode_Function *)unit;
+      LLVMTypeRef *arg_types = malloc(u->param_count * sizeof(LLVMTypeRef));
+      for(int i = 0; i < u->param_count; i++) {
+        arg_types[i] = llvm_type_of(u->register_types.data[i]);
+      }
+
+      char *name = st_get_str_of(u->u.name);
+
+      LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(u->return_type), arg_types, u->param_count, false));
+      LLVMSetFunctionCallConv(llf, LLVMCCallConv);
+
+      u->llvm_function = llf;
+      break;
+    }
+    case BYTECODE_FOREIGN_FUNCTION: {
+      Bytecode_Foreign_Function *u = (Bytecode_Foreign_Function *)unit;
+      LLVMTypeRef *arg_types = malloc(u->parameter_types.length * sizeof(LLVMTypeRef));
+      for(int i = 0; i < u->parameter_types.length; i++) {
+        arg_types[i] = llvm_type_of(u->parameter_types.data[i]);
+      }
+
+      char *name = st_get_str_of(u->u.name);
+
+      LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(u->return_type), arg_types, u->parameter_types.length, false));
+      LLVMSetFunctionCallConv(llf, LLVMCCallConv);
+
+      u->llvm_function = llf;
+      break;
+    }
   }
 
-  char *name = st_get_str_of(fn->unique_name);
-
-  LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(fn->return_type), arg_types, fn->param_count, false));
-  LLVMSetFunctionCallConv(llf, LLVMCCallConv);
-
-  fn->llvm_function = llf;
 }
 
 
@@ -264,20 +286,39 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
 
         case BC_CALL: {
-          Bytecode_Function to_call = *inst.data.call.to;
           u32 result_reg = inst.data.call.reg;
           bool keep_return_value = inst.data.call.keep_return_value;
-          LLVMValueRef llto_call = to_call.llvm_function;
-          LLVMValueRef *args = malloc(to_call.param_count *sizeof(LLVMValueRef));
-          for(int k = 0; k < to_call.param_count; k++) {
+          LLVMValueRef llto_call;
+          Type_Array param_types;
+          {
+            Bytecode_Unit *unit = inst.data.call.to;
+            switch(unit->type) {
+              case BYTECODE_FUNCTION: {
+                Bytecode_Function *u = (Bytecode_Function *)unit;
+                llto_call = u->llvm_function;
+                param_types = u->register_types;
+                param_types.length = u->param_count;
+                break;
+              }
+              case BYTECODE_FOREIGN_FUNCTION: {
+                Bytecode_Foreign_Function *u = (Bytecode_Foreign_Function *)unit;
+                llto_call = u->llvm_function;
+                param_types = u->parameter_types;
+                break;
+              }
+              default: assert(false);
+            }
+          }
+          LLVMValueRef *args = malloc(param_types.length *sizeof(LLVMValueRef));
+          for(int k = 0; k < param_types.length; k++) {
             j++;
             inst = block.instructions.data[j];
             assert(inst.type == BC_ARG);
             u32 reg = inst.data.arg.reg;
             LLVMValueRef loaded = LLVMBuildLoad(builder, r[reg], "");
-            args[k] = generate_llvm_cast(builder, loaded, fn.register_types.data[reg], to_call.register_types.data[k]);
+            args[k] = generate_llvm_cast(builder, loaded, fn.register_types.data[reg], param_types.data[k]);
           }
-          LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, to_call.param_count, "");
+          LLVMValueRef a = LLVMBuildCall(builder, llto_call, args, param_types.length, "");
           if(keep_return_value) LLVMBuildStore(builder, a, r[result_reg]);
           break;
         }
@@ -320,20 +361,21 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
   free(r);
 }
 
-void llvm_generate_module(Bytecode_Function_Ptr_Array fns, char *out_obj, char *out_asm, char *out_ir) {
+void llvm_generate_module(Bytecode_Unit_Ptr_Array units, char *out_obj, char *out_asm, char *out_ir) {
   char *error = NULL;
   bool is_error = false;
 
   LLVMModuleRef mod = LLVMModuleCreateWithName("main_module");
 
-  for(int i = 0; i < fns.length; i++) {
-    generate_llvm_function_signature(mod, fns.data[i]);
+  for(int i = 0; i < units.length; i++) {
+    generate_llvm_function_signature(mod, units.data[i]);
   }
 
   LLVMBuilderRef builder = LLVMCreateBuilder();
 
-  for(int i = 0; i < fns.length; i++) {
-    generate_llvm_function(mod, builder, *fns.data[i]);
+  for(int i = 0; i < units.length; i++) {
+    if(units.data[i]->type == BYTECODE_FUNCTION)
+      generate_llvm_function(mod, builder, *((Bytecode_Function *)units.data[i]));
   }
 
   LLVMDisposeBuilder(builder);

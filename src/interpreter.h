@@ -10,6 +10,6 @@
 // and then the parameter list will be freed (by the callee).
 // The result is a pointer to the function's return value. The caller
 // has ownership of this pointer and should free it ASAP.
-u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params);
+u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params);
 
 #endif

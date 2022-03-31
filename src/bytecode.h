@@ -74,7 +74,7 @@ typedef struct Bytecode_Instruction {
     } get_member_ptr;
 
     struct {
-      Bytecode_Function *to;
+      Bytecode_Unit *to;
       u32 reg;
       bool keep_return_value;
     } call;
@@ -108,32 +108,48 @@ typedef struct Bytecode_Block {
 
 GENERATE_DARRAY_HEADER(Bytecode_Block, Bytecode_Block_Array);
 
+
+typedef enum Bytecode_Unit_Type {
+  BYTECODE_FUNCTION,
+  BYTECODE_FOREIGN_FUNCTION
+} Bytecode_Unit_Type;
+
+// Bytecode_Units are stored in the same way as Ast_Nodes, where the Bytecode_Unit
+// struct is always a header which tells which specific unit type is to follow.
+
+typedef struct Bytecode_Unit {
+  Bytecode_Unit_Type type;
+  symbol name;
+} Bytecode_Unit;
+
 typedef struct Bytecode_Function {
+  Bytecode_Unit u;
   // For a function with n arguments, the arguments are passed in through the first n registers.
   u32 param_count;
   u32 entry_block;
-  symbol unique_name;
   Type_Array register_types;
   Bytecode_Block_Array blocks;
   Type return_type;
   LLVMValueRef llvm_function;
 } Bytecode_Function;
 
-GENERATE_DARRAY_HEADER(Bytecode_Function *, Bytecode_Function_Ptr_Array);
-Bytecode_Function_Ptr_Array bytecode_functions; // should be initialized as empty in main
+typedef struct Bytecode_Foreign_Function {
+  Bytecode_Unit u;
+  Type_Array parameter_types;
+  Type return_type;
+  LLVMValueRef llvm_function;
+} Bytecode_Foreign_Function;
 
-// Refers to the translation of an ast block to bytecode, where entry is the
-// generated entry block and exit is the generated exit block.
-// Entry can equal exit.
-typedef struct Bytecode_Ast_Block {
-  u32 entry;
-  u32 exit;
-  u32 result_reg;
-} Bytecode_Ast_Block;
+GENERATE_DARRAY_HEADER(Bytecode_Unit *, Bytecode_Unit_Ptr_Array);
+Bytecode_Unit_Ptr_Array bytecode_units; // should be initialized as empty in main
+
+Bytecode_Unit *allocate_bytecode_unit_type(Bytecode_Unit_Type type, u32 size);
 
 void print_bytecode_instruction(Bytecode_Instruction inst);
 void print_bytecode_block(Bytecode_Block block);
 void print_bytecode_function(Bytecode_Function fn);
+void print_bytecode_foreign_function(Bytecode_Foreign_Function fn);
+void print_bytecode_unit(Bytecode_Unit *unit);
 void print_bytecode_compilation_unit(Compilation_Unit *unit);
 void generate_bytecode_compilation_unit(Compilation_Unit *unit); // can poison the compilation unit, e.g. if the body of a function it refers to is poisoned.
 

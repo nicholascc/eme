@@ -16,9 +16,9 @@
 
 
 int main(int argc, char *argv[]) {
-  char *out_obj;
-  char *out_asm;
-  char *out_ir;
+  char *out_obj = NULL;
+  char *out_asm = NULL;
+  char *out_ir = NULL;
   if(argc == 2) {
     out_obj = argv[1];
   } else if(argc == 3) {
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
   init_primitive_types();
   register_parser_symbols();
   init_file_array();
-  bytecode_functions = init_Bytecode_Function_Ptr_Array(2);
+  bytecode_units = init_Bytecode_Unit_Ptr_Array(2);
 
   char *contents = add_file("./examples/test.eme");
   //printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
 
   bool compilation_has_errors = false;
 
-  Bytecode_Function main;
+  Bytecode_Unit *main;
   bool main_found = false;
   for(int i = 0; i < ast->scope.entries.length; i++) {
     Scope_Entry entry = ast->scope.entries.data[i];
@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
         compilation_has_errors = true;
       } else {
         if(is_main) {
-          main = *body->data.body.bytecode;
+          main = body->data.body.bytecode;
         }
       }
     }
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  printf("Result: %lli\n", *((s64 *)interpret_bytecode_function(main, NULL)));
+  printf("Result: %lli\n", *((s64 *)interpret_bytecode_unit(main, NULL)));
 
   if(compilation_has_errors) {
     printf("\n\nThere were errors during compilation, exiting.\n");
@@ -101,7 +101,7 @@ int main(int argc, char *argv[]) {
   }
 
 
-  llvm_generate_module(bytecode_functions, out_obj, out_asm, out_ir);
+  llvm_generate_module(bytecode_units, out_obj, out_asm, out_ir);
 
   return 0;
 }

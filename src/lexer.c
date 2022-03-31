@@ -78,12 +78,13 @@ void print_token(Token t) {
     case TCOMMA:         printf(","); break;
     case TDOLLAR_SIGN:   printf("$"); break;
 
-    case TFN:     printf("fn"); break;
-    case TSTRUCT: printf("struct"); break;
-    case TRETURN: printf("return"); break;
-    case TIF:     printf("if"); break;
-    case TELSE:   printf("else"); break;
-    case TWHILE:  printf("while"); break;
+    case TFN:      printf("fn"); break;
+    case TSTRUCT:  printf("struct"); break;
+    case TFOREIGN: printf("foreign"); break;
+    case TRETURN:  printf("return"); break;
+    case TIF:      printf("if"); break;
+    case TELSE:    printf("else"); break;
+    case TWHILE:   printf("while"); break;
     default: printf("unknown: %i", t.type); break;
   }
   printf("\")\n");
@@ -253,6 +254,8 @@ Token_Array lex_string(char *to_lex, int file_id) {
         t.type = TRETURN;
       } else if(len == 6 && 0 == memcmp(symbol_str, "struct", 6)) {
         t.type = TSTRUCT;
+      } else if(len == 7 && 0 == memcmp(symbol_str, "foreign", 7)) {
+        t.type = TFOREIGN;
       } else if(len == 5 && 0 == memcmp(symbol_str, "while", 5)) {
         t.type = TWHILE;
       } else if(len == 4 && 0 == memcmp(symbol_str, "true", 4)) {

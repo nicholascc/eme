@@ -9,9 +9,25 @@
 #include "type_inference.h"
 #include "errors.h"
 
+
+// Refers to the translation of an ast block to bytecode, where entry is the
+// generated entry block and exit is the generated exit block.
+// Entry can equal exit.
+typedef struct Bytecode_Ast_Block {
+  u32 entry;
+  u32 exit;
+  u32 result_reg;
+} Bytecode_Ast_Block;
+
+Bytecode_Unit *allocate_bytecode_unit_type(Bytecode_Unit_Type type, u32 size) {
+  Bytecode_Unit *result = malloc(size);
+  result->type = type;
+  return result;
+}
+
 GENERATE_DARRAY_CODE(Bytecode_Instruction, Bytecode_Instruction_Array);
 GENERATE_DARRAY_CODE(Bytecode_Block, Bytecode_Block_Array);
-GENERATE_DARRAY_CODE(Bytecode_Function *, Bytecode_Function_Ptr_Array);
+GENERATE_DARRAY_CODE(Bytecode_Unit *, Bytecode_Unit_Ptr_Array);
 
 Scope_Entry *get_entry_of_identifier_register_scope(symbol symbol, Scope *scope, Location error_location) {
   Scope *found_scope;
@@ -76,9 +92,9 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
     }
     case BC_CALL: {
       if(inst.data.call.keep_return_value)
-        printf("call %s -> r%i\n", st_get_str_of(inst.data.call.to->unique_name), inst.data.call.reg);
+        printf("call %s -> r%i\n", st_get_str_of(inst.data.call.to->name), inst.data.call.reg);
       else
-        printf("call %s\n", st_get_str_of(inst.data.call.to->unique_name));
+        printf("call %s\n", st_get_str_of(inst.data.call.to->name));
       break;
     }
     case BC_ARG: {
@@ -115,7 +131,7 @@ void print_bytecode_block(Bytecode_Block block) {
 }
 
 void print_bytecode_function(Bytecode_Function fn) {
-  printf("%s :: bytecode_fn (%i) -> ", st_get_str_of(fn.unique_name), fn.param_count);
+  printf("%s :: bytecode_fn (%i) -> ", st_get_str_of(fn.u.name), fn.param_count);
   print_type(fn.return_type);
   printf(" {\n");
   printf("  .registers :: {\n");
@@ -135,10 +151,37 @@ void print_bytecode_function(Bytecode_Function fn) {
   printf("  }\n}\n");
 }
 
+void print_bytecode_foreign_function(Bytecode_Foreign_Function fn) {
+  printf("%s :: foreign (", st_get_str_of(fn.u.name));
+  for(int i = 0; i < fn.parameter_types.length; i++) {
+    if(i != 0) printf(", ");
+    print_type(fn.parameter_types.data[i]);
+  }
+  printf(") -> ");
+  print_type(fn.return_type);
+  printf(";");
+}
+
+void print_bytecode_unit(Bytecode_Unit *unit) {
+  switch(unit->type) {
+    case BYTECODE_FUNCTION: {
+      print_bytecode_function(*((Bytecode_Function *)unit));
+      break;
+    }
+    case BYTECODE_FOREIGN_FUNCTION: {
+      print_bytecode_foreign_function(*((Bytecode_Foreign_Function *)unit));
+      break;
+    }
+    default: assert(false);
+  }
+}
+
 void print_bytecode_compilation_unit(Compilation_Unit *unit) {
-  if(unit->bytecode_generated)
-    print_bytecode_function(*unit->data.body.bytecode);
-  else printf("<bytecode not generated yet>\n");
+  if(unit->bytecode_generated) {
+    if(unit->type == UNIT_FUNCTION_BODY) print_bytecode_unit(unit->data.body.bytecode);
+    else if(unit->type == UNIT_FOREIGN_FUNCTION) print_bytecode_unit(unit->data.foreign.bytecode);
+    else assert(false);
+  } else printf("<bytecode not generated yet>\n");
 }
 
 u32 add_register(Bytecode_Function *fn, Type type) {
@@ -621,7 +664,6 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           return to_reg;
         }
       }
-
       Compilation_Unit *body = n->body;
       type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
@@ -637,7 +679,11 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       {
         Bytecode_Instruction inst;
         inst.type = BC_CALL;
-        inst.data.call.to = body->data.body.bytecode;
+        if(body->type == UNIT_FUNCTION_BODY) {
+          inst.data.call.to = body->data.body.bytecode;
+        } else if(body->type == UNIT_FOREIGN_FUNCTION) {
+          inst.data.call.to = body->data.foreign.bytecode;
+        } else assert(false);
         inst.data.call.keep_return_value = n->return_type.info->type != TYPE_NOTHING;
         inst.data.call.reg = result_reg;
         add_instruction(&fn->blocks.data[*block], inst);
@@ -693,7 +739,7 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 
 
 void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *defn, symbol unique_name, Scope *scope) {
-  r->unique_name = unique_name;
+  r->u.name = unique_name;
   r->register_types = init_Type_Array(4);
   r->param_count = defn->parameters.length;
   for(int i = 0; i < defn->parameters.length; i++) {
@@ -745,8 +791,25 @@ void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
       free(new_name);
     }
 
-    generate_bytecode_function(unit->data.body.bytecode, fn, unique_name, unit->scope);
-    Bytecode_Function_Ptr_Array_push(&bytecode_functions, unit->data.body.bytecode);
+    generate_bytecode_function((Bytecode_Function *)unit->data.body.bytecode, fn, unique_name, unit->scope);
+    Bytecode_Unit_Ptr_Array_push(&bytecode_units, unit->data.body.bytecode);
+    unit->bytecode_generating = false;
+    unit->bytecode_generated = true;
+  } else if(unit->type == UNIT_FOREIGN_FUNCTION) {
+    assert(unit->node->type == NODE_FOREIGN_DEFINITION);
+    unit->bytecode_generating = true;
+    Ast_Foreign_Definition *fn = (Ast_Foreign_Definition *)unit->node;
+
+    Bytecode_Unit *bc_unit = unit->data.foreign.bytecode;
+    assert(bc_unit->type == BYTECODE_FOREIGN_FUNCTION);
+
+    bc_unit->name = fn->symbol;
+
+    Bytecode_Foreign_Function *u = (Bytecode_Foreign_Function *)bc_unit;
+    u->parameter_types = fn->parameter_types;
+    u->return_type = fn->return_type;
+
+    Bytecode_Unit_Ptr_Array_push(&bytecode_units, bc_unit);
     unit->bytecode_generating = false;
     unit->bytecode_generated = true;
   } else assert(false);

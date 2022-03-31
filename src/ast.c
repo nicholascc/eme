@@ -233,6 +233,20 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_FOREIGN_DEFINITION: {
+      Ast_Foreign_Definition *n = (Ast_Foreign_Definition *)node;
+      print_symbol(n->symbol);
+      printf(" :: foreign (");
+      for(int i = 0; i < n->parameters.length; i++) {
+        if(i != 0) printf(", ");
+        print_ast_node(n->parameters.data[i]);
+      }
+      printf(") -> ");
+      print_ast_node(n->return_type_node);
+      printf(";");
+      break;
+    }
+
     case NODE_STRUCT_DEFINITION: {
       Ast_Struct_Definition *n = (Ast_Struct_Definition *)node;
       print_symbol(n->symbol);
@@ -315,8 +329,6 @@ void print_scope(Scope scope, bool print_entries) {
 }
 
 void print_compilation_unit(Compilation_Unit *unit) {
-  if(unit->poisoned) printf("POISONED:\n");
-
   printf("type inference: ");
   if(unit->type_inferred) printf("done\n");
   else if(unit->type_inference_seen) printf("seen\n");
@@ -326,6 +338,11 @@ void print_compilation_unit(Compilation_Unit *unit) {
   if(unit->bytecode_generated) printf("done\n");
   else if(unit->bytecode_generating) printf("in progress\n");
   else printf("not yet\n");
+
+  printf("poisoned: ");
+
+  if(unit->poisoned) printf("true\n");
+  else printf("false\n");
 
   switch(unit->type) {
     case UNIT_POLY_FUNCTION: {
@@ -345,7 +362,19 @@ void print_compilation_unit(Compilation_Unit *unit) {
       print_ast_node(unit->node);
       printf("\n");
       break;
-    };
+    }
+    case UNIT_FUNCTION_SIGNATURE: {
+      printf("Signature:\n");
+      print_ast_node(unit->node);
+      printf("\n");
+      break;
+    }
+    case UNIT_FOREIGN_FUNCTION: {
+      printf("Foreign function:\n");
+      print_ast_node(unit->node);
+      printf("\n");
+      break;
+    }
     default: {
       printf("Unknown type of compilation unit.\n");
     }

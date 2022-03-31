@@ -28,6 +28,7 @@ typedef enum Ast_Node_Type {
   NODE_TYPED_DECL_SET,
   NODE_FUNCTION_PARAMETER,
   NODE_FUNCTION_DEFINITION,
+  NODE_FOREIGN_DEFINITION,
   NODE_STRUCT_DEFINITION,
   NODE_POLY_STRUCT_DEFINITION,
   NODE_RETURN
@@ -56,7 +57,7 @@ Ast_Node NULL_AST_NODE;
 
 GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
-typedef struct Bytecode_Function Bytecode_Function;
+typedef struct Bytecode_Unit Bytecode_Unit;
 
 typedef enum Compilation_Unit_Type {
   // A function is represented by a signature and body which must be
@@ -67,7 +68,8 @@ typedef enum Compilation_Unit_Type {
   UNIT_STRUCT,
   UNIT_STRUCT_MEMBER, // represents both struct members and poly instance members.
   UNIT_POLY_STRUCT,
-  UNIT_POLY_FUNCTION
+  UNIT_POLY_FUNCTION,
+  UNIT_FOREIGN_FUNCTION
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
@@ -92,9 +94,13 @@ typedef struct Compilation_Unit {
       Compilation_Unit *body;
     } signature;
     struct {
-      Bytecode_Function *bytecode;
+      Bytecode_Unit *bytecode;
       Compilation_Unit *signature; // If the function is polymorphic, this is a UNIT_POLY_FUNCTION.
     } body;
+
+    struct {
+      Bytecode_Unit *bytecode;
+    } foreign;
 
     struct {
       Type type;
@@ -306,6 +312,15 @@ typedef struct Ast_Function_Definition {
   Scope parameter_scope; // subscope of bound_type_scope
   Ast_Node *body;
 } Ast_Function_Definition;
+
+typedef struct Ast_Foreign_Definition {
+  Ast_Node n;
+  symbol symbol;
+  Ast_Node_Ptr_Array parameters;
+  Type_Array parameter_types;
+  Ast_Node *return_type_node;
+  Type return_type;
+} Ast_Foreign_Definition;
 
 typedef struct Ast_Struct_Definition {
   Ast_Node n;

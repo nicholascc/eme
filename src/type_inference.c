@@ -755,7 +755,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         }
         Type value_passed = type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned);
         n->return_type = allocate_unknown_int_type(size_of_type(value_passed));
-        return POISON_TYPE;
+        return INT_TYPE;
       } else if(identifier == st_get_id_of("type_of", -1)) {
         if(n->arguments.length != 1) {
           type_inference_error(NULL, node->loc, unit_poisoned);
@@ -802,6 +802,23 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           } else {
             for(int i = 0; i < n->arguments.length; i++) {
               Type defined = def->parameter_scope.entries.data[i].data.reg.type;
+              Type passed = solidify_type(infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned), *n->arguments.data[i]);
+              if(!can_implicitly_cast_type(passed, defined))
+                error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
+            }
+          }
+          n->return_type = def->return_type;
+          return def->return_type;
+        } else if(def_unit->node->type == NODE_FOREIGN_DEFINITION) {
+          n->body = def_unit;
+          type_infer_compilation_unit(def_unit);
+          Ast_Foreign_Definition *def = (Ast_Foreign_Definition *)def_unit->node;
+          if(n->arguments.length != def->parameter_types.length) {
+            type_inference_error(NULL, node->loc, unit_poisoned);
+            printf("I expected %i arguments to this function, but got %i instead.\n", def->parameter_types.length,n->arguments.length);
+          } else {
+            for(int i = 0; i < n->arguments.length; i++) {
+              Type defined = def->parameter_types.data[i];
               Type passed = solidify_type(infer_type_of_expr(n->arguments.data[i], scope, unit, true, unit_poisoned), *n->arguments.data[i]);
               if(!can_implicitly_cast_type(passed, defined))
                 error_cannot_implicitly_cast(passed, defined, n->arguments.data[i]->loc, false, unit_poisoned);
@@ -890,7 +907,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
               instance->node = (Ast_Node *)new_def;
               instance->scope = def_unit->scope;
               instance->data.body.signature = def_unit;
-              instance->data.body.bytecode = malloc(sizeof(Bytecode_Function));
+              instance->data.body.bytecode = allocate_bytecode_unit_type(BYTECODE_FUNCTION, sizeof(Bytecode_Function));
 
               set_Compilation_Unit_Ptr_Table(&def_unit->data.poly_function_def.instances, hash, instance);
               new_def->def_type = FN_POLY_INSTANCE;
@@ -1027,7 +1044,16 @@ Type infer_types_of_block(Ast_Node *node_block, Compilation_Unit *unit, bool usi
   return using_result ? last_statement_type : NOTHING_TYPE;
 }
 
-void type_infer_function_signature(Ast_Function_Definition *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
+void type_infer_foreign_definition(Ast_Foreign_Definition *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
+  assert(node->parameters.length == node->parameter_types.length);
+  for(int i = 0; i < node->parameters.length; i++) {
+    Ast_Node *param = node->parameters.data[i];
+    node->parameter_types.data[i] = type_of_type_expr(param, scope, unit, param->loc, unit_poisoned);
+  }
+  node->return_type = type_of_type_expr(node->return_type_node, scope, unit, node->return_type_node->loc, unit_poisoned);
+}
+
+void type_infer_function_definition(Ast_Function_Definition *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
   assert(node->def_type == FN_SIMPLE);
 
   infer_types_of_function_parameters(node->parameters, &node->parameter_scope, unit, unit_poisoned);
@@ -1059,7 +1085,13 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
   unit->type_inference_seen = true;
   switch(unit->type) {
     case UNIT_FUNCTION_SIGNATURE: {
-      type_infer_function_signature((Ast_Function_Definition *)unit->node, unit->scope, unit, &unit->poisoned);
+      assert(unit->node->type == NODE_FUNCTION_DEFINITION);
+      type_infer_function_definition((Ast_Function_Definition *)unit->node, unit->scope, unit, &unit->poisoned);
+      break;
+    }
+    case UNIT_FOREIGN_FUNCTION: {
+      assert(unit->node->type == NODE_FOREIGN_DEFINITION);
+      type_infer_foreign_definition((Ast_Foreign_Definition *)unit->node, unit->scope, unit, &unit->poisoned);
       break;
     }
     case UNIT_FUNCTION_BODY: {

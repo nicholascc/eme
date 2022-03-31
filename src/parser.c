@@ -648,11 +648,26 @@ Ast *parse_file(Token_Reader *r) {
         body->node = node;
         body->scope = &result->scope;
         body->data.body.signature = sig;
-        body->data.body.bytecode = malloc(sizeof(Bytecode_Function));
+        body->data.body.bytecode = allocate_bytecode_unit_type(BYTECODE_FUNCTION, sizeof(Bytecode_Function));
+
         Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
 
         declaration_unit = sig;
       } else assert(false);
+    } else if(node->type == NODE_FOREIGN_DEFINITION) {
+      Compilation_Unit *sig = allocate_null_compilation_unit();
+      sig->type = UNIT_FOREIGN_FUNCTION;
+      sig->type_inferred = false;
+      sig->type_inference_seen = false;
+      sig->bytecode_generated = false;
+      sig->bytecode_generating = false;
+      sig->poisoned = false;
+      sig->node = node;
+      sig->scope = &result->scope;
+      sig->data.foreign.bytecode = allocate_bytecode_unit_type(BYTECODE_FOREIGN_FUNCTION, sizeof(Bytecode_Foreign_Function));
+      Compilation_Unit_Ptr_Array_push(&result->compilation_units, sig);
+
+      declaration_unit = sig;
     } else if(node->type == NODE_STRUCT_DEFINITION) {
       Ast_Struct_Definition *n = (Ast_Struct_Definition *)node;
       Compilation_Unit *unit = allocate_null_compilation_unit();
@@ -685,6 +700,8 @@ Ast *parse_file(Token_Reader *r) {
       Compilation_Unit_Ptr_Array_push(&result->compilation_units, unit);
 
       declaration_unit = unit;
+    } else if(node->type == NODE_NULL) {
+      // do nothing
     } else {
       print_ast_node(node);
       assert(false);
@@ -695,7 +712,8 @@ Ast *parse_file(Token_Reader *r) {
        node->type == NODE_UNTYPED_DECL_SET ||
        node->type == NODE_FUNCTION_DEFINITION ||
        node->type == NODE_STRUCT_DEFINITION ||
-       node->type == NODE_POLY_STRUCT_DEFINITION) {
+       node->type == NODE_POLY_STRUCT_DEFINITION ||
+       node->type == NODE_FOREIGN_DEFINITION) {
       Scope_Entry e;
       switch(node->type) {
         case NODE_TYPED_DECL: e.symbol = ((Ast_Typed_Decl *)node)->symbol; break;
@@ -704,6 +722,7 @@ Ast *parse_file(Token_Reader *r) {
         case NODE_FUNCTION_DEFINITION: e.symbol = ((Ast_Function_Definition *)node)->symbol; break;
         case NODE_STRUCT_DEFINITION: e.symbol = ((Ast_Struct_Definition *)node)->symbol; break;
         case NODE_POLY_STRUCT_DEFINITION: e.symbol = ((Ast_Poly_Struct_Definition *)node)->symbol; break;
+        case NODE_FOREIGN_DEFINITION: e.symbol = ((Ast_Foreign_Definition *)node)->symbol; break;
       }
       e.data.unit.unit = declaration_unit;
       Scope_Entry_Array_push(&result->scope.entries, e);
@@ -924,6 +943,41 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
   } else error_unexpected_token(after_struct);
 }
 
+Ast_Node *parse_foreign_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
+  Token open_paren = peek_token(r);
+  if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
+
+  Ast_Foreign_Definition *n = (Ast_Foreign_Definition *)allocate_ast_node_type(NODE_FOREIGN_DEFINITION, sizeof(Ast_Foreign_Definition));
+  n->n.loc = loc;
+  n->symbol = identifier;
+  n->parameters = init_Ast_Node_Ptr_Array(2);
+  n->parameter_types = init_Type_Array(2);
+  while(true) {
+    Ast_Node_Ptr_Array_push(&n->parameters, parse_expression(r, scope, 0, NULL, NULL));
+    Type_Array_push(&n->parameter_types, UNKNOWN_TYPE);
+    Token comma = peek_token(r);
+    if(comma.type == TCOMMA) continue;
+    else if(comma.type == TCLOSE_PAREN) break;
+    else error_unexpected_token(comma);
+  }
+
+  save_state(r);
+  Token arrow = peek_token(r);
+  if(arrow.type == TARROW) {
+    n->return_type_node = parse_expression(r, scope, 0, NULL, NULL);
+  } else {
+    revert_state(r);
+    Ast_Primitive_Type *type_node = (Ast_Primitive_Type *)allocate_ast_node_type(NODE_PRIMITIVE_TYPE, sizeof(Ast_Primitive_Type));
+    type_node->n.loc = open_paren.loc;
+    type_node->type = NOTHING_TYPE;
+    n->return_type_node = (Ast_Node *)type_node;
+  }
+
+  n->return_type = UNKNOWN_TYPE;
+
+  return (Ast_Node *)n;
+}
+
 Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
   Token identifier = peek_token(r);
   Token double_colon = peek_token(r);
@@ -933,5 +987,7 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
     return parse_function_definition(r, identifier.data.symbol, double_colon.loc, scope);
   } else if(def_type.type == TSTRUCT) {
     return parse_struct_definition(r, identifier.data.symbol, double_colon.loc, scope);
+  } else if(def_type.type == TFOREIGN) {
+    return parse_foreign_definition(r, identifier.data.symbol, double_colon.loc, scope);
   } else parse_error("I expected 'struct' or 'fn'.", def_type.loc, true);
 }

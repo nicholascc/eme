@@ -178,33 +178,59 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         u32 reg_a = inst.data.unary_op.reg_a;
         u32 reg_b = inst.data.unary_op.reg_b;
         u32 a_size = size_of_type(fn.register_types.data[reg_a]);
-        u64 b = *((u64 *)&local[r_to_id[reg_b]]);
-        memcpy(&local[r_to_id[reg_a]], (u8 *)b, a_size);
+        Type b_type = fn.register_types.data[reg_b];
+        assert(b_type.reference_count > 0);
+        b_type.reference_count--;
+        u8 *b = *((u8 **)&local[r_to_id[reg_b]]);
+        interpreter_cast(b, &local[r_to_id[reg_a]], b_type, fn.register_types.data[reg_a]);
         break;
       }
       case BC_STORE: {
         u32 reg_a = inst.data.unary_op.reg_a;
         u32 reg_b = inst.data.unary_op.reg_b;
-        u32 b_size = size_of_type(fn.register_types.data[reg_b]);
-        u64 a = *((u64 *)&local[r_to_id[reg_a]]);
-        memcpy((u8 *)a, &local[r_to_id[reg_b]], b_size);
+        Type a_type = fn.register_types.data[reg_a];
+        assert(a_type.reference_count > 0);
+        a_type.reference_count--;
+        u8 *a = *((u8 **)&local[r_to_id[reg_a]]);
+        interpreter_cast(&local[r_to_id[reg_b]], a, fn.register_types.data[reg_b], a_type);
         break;
       }
       case BC_CALL: {
-        Bytecode_Function to_call = *inst.data.call.to;
+        Bytecode_Unit *to_call = inst.data.call.to;
         u32 result_reg = inst.data.call.reg;
         bool keep_return_value = inst.data.call.keep_return_value;
+        Type_Array param_types;
 
-        u8 **params = malloc(to_call.param_count * sizeof(u8 *));
-        for(int k = 0; k < to_call.param_count; k++) {
+        switch(to_call->type) {
+          case BYTECODE_FUNCTION: {
+            Bytecode_Function *u = (Bytecode_Function *)to_call;
+            param_types = u->register_types;
+            param_types.length = u->param_count;
+            break;
+          }
+          case BYTECODE_FOREIGN_FUNCTION: {
+            Bytecode_Foreign_Function *u = (Bytecode_Foreign_Function *)to_call;
+            param_types = u->parameter_types;
+            break;
+          }
+          default: printf("%i\n", to_call->type); assert(false);
+        }
+
+        u8 **params = malloc(param_types.length * sizeof(u8 *));
+        for(int k = 0; k < param_types.length; k++) {
           inst_i++;
           inst = block.instructions.data[inst_i];
           assert(inst.type == BC_ARG);
-          params[k] = &local[r_to_id[inst.data.arg.reg]];
+
+          Type a_type = fn.register_types.data[inst.data.arg.reg];
+          params[k] = malloc(size_of_type(a_type));
+          interpreter_cast(&local[r_to_id[inst.data.arg.reg]], params[k], a_type, param_types.data[k]);
         }
-        u8 *result_ptr = interpret_bytecode_function(to_call, params);
+
+        u8 *result_ptr = interpret_bytecode_unit(to_call, params);
         if(keep_return_value) {
-          memcpy(&local[r_to_id[result_reg]], result_ptr, size_of_type(fn.register_types.data[result_reg]));
+          int size = size_of_type(fn.register_types.data[result_reg]);
+          memcpy(&local[r_to_id[result_reg]], result_ptr, size);
         }
         if(result_ptr) free(result_ptr);
         break;
@@ -216,7 +242,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
       }
       case BC_RETURN: {
         u32 reg = inst.data.ret.reg;
-        u8 *result = calloc(fn.return_type.info->size, sizeof(u8));
+        u8 *result = calloc(size_of_type(fn.return_type), sizeof(u8));
         interpreter_cast(&local[r_to_id[reg]], result, fn.register_types.data[reg], fn.return_type);
         free(r_to_id);
         free(local);
@@ -253,5 +279,37 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
     if(inst_i >= block.instructions.length) {
       break;
     }
+  }
+}
+
+
+u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params) {
+  switch(unit->type) {
+    case BYTECODE_FUNCTION: {
+      return interpret_bytecode_function(*(Bytecode_Function *)unit, params);
+    }
+    case BYTECODE_FOREIGN_FUNCTION: {
+      Bytecode_Foreign_Function *fn = (Bytecode_Foreign_Function *)unit;
+      u8 *result = NULL;
+
+      if(fn->u.name == st_get_id_of("malloc", -1)) {
+        result = malloc(sizeof(u64));
+        u64 param;
+        memcpy(&param, params[0], sizeof(u64));
+        u64 *r_u64 = (u64 *)result;
+        *r_u64 = (u64)malloc(param);
+      } else if(fn->u.name == st_get_id_of("free", -1)) {
+        u64 param;
+        memcpy(&param, params[0], sizeof(u64));
+        free((u8 *)param);
+      } else {
+        printf("The interpreted code tried to call an undefined foreign function: '%s'.\n", st_get_str_of(fn->u.name));
+        exit(1);
+      }
+
+      free(params);
+      return result;
+    }
+    default: assert(false);
   }
 }
