@@ -607,6 +607,7 @@ bool try_function_call(Type_Array arguments, Compilation_Unit *unit, Ast_Functio
 
         set_Compilation_Unit_Ptr_Table(&unit->data.poly_function_def.instances, hash, instance);
         new_def->def_type = FN_POLY_INSTANCE;
+        new_def->is_inline = def->is_inline;
         new_def->bound_type_scope = instance_scope;
         new_def->parameter_scope = copy_scope(def->parameter_scope, &new_def->bound_type_scope);
 

@@ -131,7 +131,9 @@ void print_bytecode_block(Bytecode_Block block) {
 }
 
 void print_bytecode_function(Bytecode_Function fn) {
-  printf("%s :: bytecode_fn (%i) -> ", st_get_str_of(fn.u.name), fn.param_count);
+  printf("%s :: bytecode_fn ", st_get_str_of(fn.u.name));
+  if(fn.is_inline) printf("inline ");
+  printf("(%i) -> ", fn.param_count);
   print_type(fn.return_type);
   printf(" {\n");
   printf("  .registers :: {\n");
@@ -747,6 +749,8 @@ void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *d
     Scope_Entry *e = &defn->parameter_scope.entries.data[i];
     e->data.reg.register_id = add_register(r, e->data.reg.type);
   }
+
+  r->is_inline = defn->is_inline;
 
   r->blocks = init_Bytecode_Block_Array(2);
   assert(defn->body->type == NODE_BLOCK);

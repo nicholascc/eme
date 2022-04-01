@@ -307,6 +307,7 @@ typedef struct Ast_Function_Definition {
   Ast_Node_Ptr_Array parameters;
   Ast_Node *return_type_node;
   Function_Definition_Type def_type;
+  bool is_inline;
   Type return_type; // not relevant for FN_POLYMORPHIC
   Scope bound_type_scope;
   Scope parameter_scope; // subscope of bound_type_scope

@@ -77,6 +77,7 @@ void print_token(Token t) {
     case TDOT_CARET:     printf(".^"); break;
     case TCOMMA:         printf(","); break;
     case TDOLLAR_SIGN:   printf("$"); break;
+    case TNUMBER_SIGN:   printf("#"); break;
 
     case TFN:      printf("fn"); break;
     case TSTRUCT:  printf("struct"); break;
@@ -420,6 +421,7 @@ Token_Array lex_string(char *to_lex, int file_id) {
                   }
         case ',': t.type = TCOMMA; break;
         case '$': t.type = TDOLLAR_SIGN; break;
+        case '#': t.type = TNUMBER_SIGN; break;
 
         default: print_error(loc);
                  printf("Unrecognized special character.\n");

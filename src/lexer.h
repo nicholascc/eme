@@ -58,6 +58,7 @@ typedef enum Token_Type {
   TDOT_CARET,
   TCOMMA,
   TDOLLAR_SIGN,
+  TNUMBER_SIGN,
 
   TFN,
   TSTRUCT,

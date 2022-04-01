@@ -89,6 +89,9 @@ void generate_llvm_function_signature(LLVMModuleRef mod, Bytecode_Unit *unit) {
 
       LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(u->return_type), arg_types, u->param_count, false));
       LLVMSetFunctionCallConv(llf, LLVMCCallConv);
+      if(u->is_inline) {
+        LLVMAddAttributeAtIndex(llf, LLVMAttributeFunctionIndex, LLVMCreateEnumAttribute(LLVMGetGlobalContext(), LLVMGetEnumAttributeKindForName("alwaysinline", 12), 0));
+      }
 
       u->llvm_function = llf;
       break;

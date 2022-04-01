@@ -494,6 +494,7 @@ Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
     }
     case NODE_FUNCTION_DEFINITION:
     case NODE_POLY_STRUCT_DEFINITION:
+    default:
       assert(false);
   }
 }

@@ -816,10 +816,31 @@ Ast_Node_Ptr_Array parse_function_parameters(Token_Reader *r, Scope *bound_type_
 }
 
 Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
-  Token open_paren = peek_token(r);
-  if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 
   Ast_Function_Definition *n = (Ast_Function_Definition *)allocate_ast_node_type(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
+  n->is_inline = false;
+  // parse directives
+  Token open_paren;
+  while(true) {
+    Token number_sign = peek_token(r);
+    if(number_sign.type == TOPEN_PAREN) {
+      open_paren = number_sign;
+      break;
+    } else if(number_sign.type != TNUMBER_SIGN)
+      error_unexpected_token(number_sign);
+
+    Token sym = peek_token(r);
+    if(sym.type != TSYMBOL)
+      error_unexpected_token(sym);
+
+    symbol s = sym.data.symbol;
+
+    if(s == st_get_id_of("inline", -1)) {
+      if(n->is_inline) parse_error("I found the '#inline' directive multiple times in this function definition.", sym.loc, true);
+      n->is_inline = true;
+    } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
+  }
+
   n->n.loc = loc;
   n->bound_type_scope.type = SYMBOL_SCOPE;
   n->bound_type_scope.has_parent = true;
@@ -946,7 +967,7 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
 Ast_Node *parse_foreign_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
   Token def_type = peek_token(r);
   if(def_type.type != TFN) error_unexpected_token(def_type);
-  
+
   Token open_paren = peek_token(r);
   if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
 

@@ -130,6 +130,7 @@ typedef struct Bytecode_Function {
   Type_Array register_types;
   Bytecode_Block_Array blocks;
   Type return_type;
+  bool is_inline;
   LLVMValueRef llvm_function;
 } Bytecode_Function;
 
