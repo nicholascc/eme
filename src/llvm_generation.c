@@ -415,6 +415,7 @@ void llvm_generate_module(Bytecode_Unit_Ptr_Array units, char *out_obj, char *ou
   LLVMPassManagerRef pass_manager = LLVMCreatePassManager();
   LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
   LLVMPassManagerBuilderDispose(pass_manager_builder);
+  LLVMAddAlwaysInlinerPass(pass_manager);
   LLVMRunPassManager(pass_manager, mod);
   LLVMDisposePassManager(pass_manager);
 
