@@ -8,6 +8,23 @@
 #include "errors.h"
 
 
+// Used to call try_function_call
+typedef enum Argument_Type {
+  ARGUMENT_NON_TYPE,
+  ARGUMENT_TYPE
+} Argument_Type;
+
+typedef struct Argument {
+  Argument_Type type;
+  union {
+    Type non_type; // TYPE of passed
+    Type type; // VALUE matching
+  } data;
+} Argument;
+
+bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit *unit, Ast_Function_Call *n, bool *unit_poisoned);
+
+
 void type_inference_error(char *message, Location l, bool *unit_poisoned) {
   print_error_message(message, l);
   *unit_poisoned = true;
@@ -240,7 +257,6 @@ Type evaluate_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
       Ast_Bind_Symbol *n = (Ast_Bind_Symbol *)node;
       Scope *found_scope;
       Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, n->n.loc, &found_scope);
-      assert(found_scope->type == TYPE_SCOPE);
       return e->data.type.value;
     }
     case NODE_PRIMITIVE_TYPE: {
@@ -480,18 +496,51 @@ bool assign_bound_type_to_poly_function_arguments(Scope *scope, Scope *instance_
       Ast_Function_Call *n = (Ast_Function_Call *)node;
       if(passed_type.reference_count > 0) return false;
       if(passed_type.info->type != TYPE_POLY_INSTANCE) return false;
-      if(n->body != passed_type.info->data.poly_instance.definition_unit) return false;
 
       assert(passed_type.info->data.poly_instance.scope->type == TYPE_SCOPE);
       assert(passed_type.info->data.poly_instance.scope->entries.length == n->arguments.length);
 
+      Argument *arguments = malloc(n->arguments.length * sizeof(Argument));
       for(int i = 0; i < n->arguments.length; i++) {
         Scope_Entry e = passed_type.info->data.poly_instance.scope->entries.data[i];
         if(!assign_bound_type_to_poly_function_arguments(scope, instance_scope, n->arguments.data[i], e.data.type.value)) {
+          free(arguments);
           return false;
         }
+        Argument a;
+        a.type = ARGUMENT_TYPE;
+        a.data.type = e.data.type.value;
+        arguments[i] = a;
       }
-      return true;
+
+      symbol identifier;
+      {
+        Ast_Symbol *sym = (Ast_Symbol *)n->identifier;
+        assert(sym->n.type == NODE_SYMBOL);
+        identifier = sym->symbol;
+      }
+
+      // edited version of get_entry_of_identifier_in_scope
+      Scope *current_scope = scope;
+      while(true) {
+        for(int i = 0; i < current_scope->entries.length; i++) {
+          Scope_Entry *e = &current_scope->entries.data[i];
+          if(e->symbol == identifier && current_scope->type == UNIT_SCOPE) {
+            bool matches = try_function_call(arguments, n->arguments.length, e->data.unit.unit, n, NULL);
+            if(matches) {
+              free(arguments);
+              return e->data.unit.unit == passed_type.info->data.poly_instance.definition_unit;
+            }
+          }
+        }
+
+        if(current_scope->has_parent)
+          current_scope = current_scope->parent;
+        else
+          break;
+      }
+      free(arguments);
+      return false;
     }
     case NODE_SYMBOL: {
       Ast_Symbol *n = (Ast_Symbol *)node;
@@ -518,19 +567,6 @@ bool assign_bound_type_to_poly_function_arguments(Scope *scope, Scope *instance_
     }
   }
 }
-
-typedef enum Argument_Type {
-  ARGUMENT_NON_TYPE,
-  ARGUMENT_TYPE
-} Argument_Type;
-
-typedef struct Argument {
-  Argument_Type type;
-  union {
-    Type non_type; // TYPE of passed
-    Type type; // VALUE matching
-  } data;
-} Argument;
 
 bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit *unit, Ast_Function_Call *n, bool *unit_poisoned) {
   if(unit->type == UNIT_FUNCTION_SIGNATURE) {
@@ -696,10 +732,6 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
     else {
       for(int i = 0; i < argument_count; i++) {
         if(arguments[i].type != ARGUMENT_TYPE)
-          return false;
-        Type defined = def->param_scope.entries.data[i].data.basic.type;
-        Type passed = arguments[i].data.type;
-        if(!can_implicitly_cast_type(passed, defined))
           return false;
       }
     }
@@ -1156,13 +1188,6 @@ void type_infer_polymorphic_function(Ast_Function_Definition *node, Compilation_
       if(t.info->type == TYPE_POISON) continue;
       if(t.info->type != TYPE_FTYPE) {
         type_inference_error("The type of a parameter of a polymorphic function must be a type.", param->type_node->loc, unit_poisoned);
-      }
-    } else if(node->parameters.data[i]->type == NODE_MATCHED_PARAMETER) {
-      Ast_Matched_Parameter *param = (Ast_Matched_Parameter *)node->parameters.data[i];
-      Type t = infer_type_of_expr(param->node, &node->bound_type_scope, unit, true, unit_poisoned);
-      if(t.info->type == TYPE_POISON) continue;
-      if(t.info->type != TYPE_FTYPE) {
-        type_inference_error("A matching parameter of a polymorphic function must be a type.", param->n.loc, unit_poisoned);
       }
     }
   }
