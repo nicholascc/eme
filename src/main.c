@@ -13,24 +13,23 @@
 #include "bytecode.h"
 #include "interpreter.h"
 
-
+typedef enum Compilation_Mode {
+  MODE_INTERPRET,
+  MODE_COMPILE
+} Compilation_Mode;
 
 int main(int argc, char *argv[]) {
-  char *out_obj = NULL;
-  char *out_asm = NULL;
-  char *out_ir = NULL;
-  if(argc == 2) {
-    out_obj = argv[1];
-  } else if(argc == 3) {
-    out_obj = argv[1];
-    out_asm = argv[2];
-  } else if(argc == 4) {
-    out_obj = argv[1];
-    out_asm = argv[2];
-    out_ir = argv[3];
-  } else if(argc != 1) {
-    print_and_exit("I expect a maximum of 3 arguments.\n");
-  }
+  if(argc < 3)
+    print_and_exit("You must provide at least two arguments: the source path, and the compilation mode (-i or -o).");
+
+  char *source_file = argv[1];
+  Compilation_Mode mode;
+  if(strcmp(argv[2], "-i") == 0) {
+    mode = MODE_INTERPRET;
+  } else if(strcmp(argv[2], "-o") == 0) {
+    mode = MODE_COMPILE;
+  } else
+    print_and_exit("Your second argument must be the compilation mode (-i or -o).");
 
 
   st_init();
@@ -39,9 +38,7 @@ int main(int argc, char *argv[]) {
   init_file_array();
   bytecode_units = init_Bytecode_Unit_Ptr_Array(2);
 
-  char *contents = add_file("./examples/test.eme");
-  //printf("--- Compiling file\n\n%s\n--- End file\n\n", contents);
-  printf("\n\n");
+  char *contents = add_file(source_file);
 
   Ast *ast;
   {
@@ -55,8 +52,8 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  printf("\n\nParsed result:\n\n");
-  print_ast(*ast);
+  //printf("\n\nParsed result:\n\n");
+  //print_ast(*ast);
 
   bool compilation_has_errors = false;
 
@@ -84,7 +81,7 @@ int main(int argc, char *argv[]) {
   }
 
   if(!main_found) {
-    print_error_message("I can't find the main function.", NULL_LOCATION);
+    print_error_message("I can't find the main function. Declare a function 'eme' to serve as the entry point to your program.", NULL_LOCATION);
     exit(1);
   }
 
@@ -93,15 +90,28 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  printf("Result: %lli\n", *((s64 *)interpret_bytecode_unit(main, NULL)));
+  if(mode == MODE_INTERPRET) {
+    printf("Running input code...\n");
+    printf("Result: %lli\n", *((s64 *)interpret_bytecode_unit(main, NULL)));
+  } else if(mode == MODE_COMPILE) {
+    char *out_obj = NULL;
+    char *out_asm = NULL;
+    char *out_ir = NULL;
+    if(argc == 4) {
+      out_obj = argv[3];
+    } else if(argc == 5) {
+      out_obj = argv[3];
+      out_asm = argv[4];
+    } else if(argc == 6) {
+      out_obj = argv[3];
+      out_asm = argv[4];
+      out_ir = argv[5];
+    } else if(argc != 3) {
+      print_and_exit("I expect a maximum of 3 output file arguments.\n");
+    }
 
-  if(compilation_has_errors) {
-    printf("\n\nThere were errors during compilation, exiting.\n");
-    exit(1);
+    llvm_generate_module(bytecode_units, out_obj, out_asm, out_ir);
   }
-
-
-  llvm_generate_module(bytecode_units, out_obj, out_asm, out_ir);
 
   return 0;
 }
