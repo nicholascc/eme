@@ -125,7 +125,7 @@ typedef struct Bytecode_Unit {
 typedef struct Bytecode_Function {
   Bytecode_Unit u;
   // For a function with n arguments, the arguments are passed in through the first n registers.
-  u32 param_count;
+  u32 passed_param_count;
   u32 entry_block;
   Type_Array register_types;
   Bytecode_Block_Array blocks;

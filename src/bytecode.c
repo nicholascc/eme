@@ -133,7 +133,7 @@ void print_bytecode_block(Bytecode_Block block) {
 void print_bytecode_function(Bytecode_Function fn) {
   printf("%s :: bytecode_fn ", st_get_str_of(fn.u.name));
   if(fn.is_inline) printf("inline ");
-  printf("(%i) -> ", fn.param_count);
+  printf("(%i) -> ", fn.passed_param_count);
   print_type(fn.return_type);
   printf(" {\n");
   printf("  .registers :: {\n");
@@ -669,10 +669,31 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       Compilation_Unit *body = n->body;
       type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
-      u32 *arg_registers = alloca(n->arguments.length * sizeof(u32));
-      for(int i = 0; i < n->arguments.length; i++) {
-        arg_registers[i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
-      }
+
+      u32 *arg_registers;
+      int arg_count;
+      if(body->node->type == NODE_FUNCTION_DEFINITION) {
+        Ast_Function_Definition *def = (Ast_Function_Definition *)body->node;
+        arg_count = def->passed_param_count;
+        arg_registers = alloca(def->passed_param_count * sizeof(u32));
+        int passed_i = 0;
+        for(int i = 0; i < n->arguments.length; i++) {
+          Ast_Node *param = def->parameters.data[i];
+          if(param->type == NODE_PASSED_PARAMETER) {
+            arg_registers[passed_i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
+            passed_i++;
+          }
+        }
+        assert(passed_i == def->passed_param_count);
+      } else if(body->node->type == NODE_FOREIGN_DEFINITION) {
+        arg_count = n->arguments.length;
+        arg_registers = alloca(arg_count * sizeof(u32));
+        for(int i = 0; i < n->arguments.length; i++) {
+          arg_registers[i] = generate_bytecode_expr(n->arguments.data[i], block, fn, scope);
+        }
+      } else assert(false);
+
+
       u32 result_reg;
       if(n->return_type.info->type == TYPE_NOTHING)
         result_reg = -1;
@@ -691,7 +712,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         add_instruction(&fn->blocks.data[*block], inst);
       }
 
-      for(int i = 0; i < n->arguments.length; i++) {
+      for(int i = 0; i < arg_count; i++) {
         Bytecode_Instruction inst;
         inst.type = BC_ARG;
         inst.data.arg.reg = arg_registers[i];
@@ -743,11 +764,19 @@ Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn
 void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *defn, symbol unique_name, Scope *scope) {
   r->u.name = unique_name;
   r->register_types = init_Type_Array(4);
-  r->param_count = defn->parameters.length;
-  for(int i = 0; i < defn->parameters.length; i++) {
-    Ast_Function_Parameter *param = (Ast_Function_Parameter *)defn->parameters.data[i];
-    Scope_Entry *e = &defn->parameter_scope.entries.data[i];
-    e->data.reg.register_id = add_register(r, e->data.reg.type);
+  {
+    int passed_i = 0;
+    for(int i = 0; i < defn->parameters.length; i++) {
+      Ast_Node *node = defn->parameters.data[i];
+      if(node->type == NODE_PASSED_PARAMETER) {
+        Ast_Passed_Parameter *n = (Ast_Passed_Parameter *)defn->parameters.data[i];
+        Scope_Entry *e = &defn->parameter_scope.entries.data[passed_i];
+        e->data.reg.register_id = add_register(r, e->data.reg.type);
+        passed_i++;
+      }
+    }
+    assert(passed_i == defn->passed_param_count);
+    r->passed_param_count = passed_i;
   }
 
   r->is_inline = defn->is_inline;

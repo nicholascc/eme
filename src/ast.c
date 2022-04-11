@@ -210,11 +210,17 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
-    case NODE_FUNCTION_PARAMETER: {
-      Ast_Function_Parameter *n = (Ast_Function_Parameter *)node;
+    case NODE_PASSED_PARAMETER: {
+      Ast_Passed_Parameter *n = (Ast_Passed_Parameter *)node;
       print_symbol(n->symbol);
       printf(": ");
       print_ast_node(n->type_node);
+      break;
+    }
+
+    case NODE_MATCHED_PARAMETER: {
+      Ast_Matched_Parameter *n = (Ast_Matched_Parameter *)node;
+      print_ast_node(n->node);
       break;
     }
 
@@ -482,9 +488,14 @@ Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
       r->value = copy_ast_node(r->value, scope);
       return (Ast_Node *)r;
     }
-    case NODE_FUNCTION_PARAMETER: {
-      Ast_Function_Parameter *r = (Ast_Function_Parameter *)allocate_ast_node(node, sizeof(Ast_Function_Parameter));
+    case NODE_PASSED_PARAMETER: {
+      Ast_Passed_Parameter *r = (Ast_Passed_Parameter *)allocate_ast_node(node, sizeof(Ast_Passed_Parameter));
       r->type_node = copy_ast_node(r->type_node, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_MATCHED_PARAMETER: {
+      Ast_Matched_Parameter *r = (Ast_Matched_Parameter *)allocate_ast_node(node, sizeof(Ast_Matched_Parameter));
+      r->node = copy_ast_node(r->node, scope);
       return (Ast_Node *)r;
     }
     case NODE_RETURN: {

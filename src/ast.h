@@ -26,7 +26,8 @@ typedef enum Ast_Node_Type {
   NODE_TYPED_DECL,
   NODE_UNTYPED_DECL_SET,
   NODE_TYPED_DECL_SET,
-  NODE_FUNCTION_PARAMETER,
+  NODE_PASSED_PARAMETER,
+  NODE_MATCHED_PARAMETER,
   NODE_FUNCTION_DEFINITION,
   NODE_FOREIGN_DEFINITION,
   NODE_STRUCT_DEFINITION,
@@ -289,11 +290,18 @@ typedef struct Ast_Block {
   Ast_Node_Ptr_Array statements;
 } Ast_Block;
 
-typedef struct Ast_Function_Parameter {
+typedef struct Ast_Passed_Parameter {
   Ast_Node n;
   symbol symbol;
   Ast_Node *type_node;
-} Ast_Function_Parameter;
+  Type type;
+} Ast_Passed_Parameter;
+
+typedef struct Ast_Matched_Parameter {
+  Ast_Node n;
+  Ast_Node *node;
+  Type value;
+} Ast_Matched_Parameter;
 
 typedef enum Function_Definition_Type {
   FN_SIMPLE,
@@ -305,6 +313,8 @@ typedef struct Ast_Function_Definition {
   Ast_Node n;
   symbol symbol;
   Ast_Node_Ptr_Array parameters;
+  int passed_param_count;
+  int matched_param_count;
   Ast_Node *return_type_node;
   Function_Definition_Type def_type;
   bool is_inline;

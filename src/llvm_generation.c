@@ -80,14 +80,14 @@ void generate_llvm_function_signature(LLVMModuleRef mod, Bytecode_Unit *unit) {
   switch(unit->type) {
     case BYTECODE_FUNCTION: {
       Bytecode_Function *u = (Bytecode_Function *)unit;
-      LLVMTypeRef *arg_types = malloc(u->param_count * sizeof(LLVMTypeRef));
-      for(int i = 0; i < u->param_count; i++) {
+      LLVMTypeRef *arg_types = malloc(u->passed_param_count * sizeof(LLVMTypeRef));
+      for(int i = 0; i < u->passed_param_count; i++) {
         arg_types[i] = llvm_type_of(u->register_types.data[i]);
       }
 
       char *name = st_get_str_of(u->u.name);
 
-      LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(u->return_type), arg_types, u->param_count, false));
+      LLVMValueRef llf = LLVMAddFunction(mod, name, LLVMFunctionType(llvm_type_of(u->return_type), arg_types, u->passed_param_count, false));
       LLVMSetFunctionCallConv(llf, LLVMCCallConv);
       if(u->is_inline) {
         LLVMAddAttributeAtIndex(llf, LLVMAttributeFunctionIndex, LLVMCreateEnumAttribute(LLVMGetGlobalContext(), LLVMGetEnumAttributeKindForName("alwaysinline", 12), 0));
@@ -134,7 +134,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
     for(int i = 0; i < fn.register_types.length; i++) {
       LLVMTypeRef type = llvm_type_of(fn.register_types.data[i]);
       r[i] = LLVMBuildAlloca(builder, type, "");
-      if(i < fn.param_count) {
+      if(i < fn.passed_param_count) {
         LLVMValueRef arg = LLVMGetParam(llf, i);
         LLVMBuildStore(builder, arg, r[i]);
       }
@@ -300,7 +300,7 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
                 Bytecode_Function *u = (Bytecode_Function *)unit;
                 llto_call = u->llvm_function;
                 param_types = u->register_types;
-                param_types.length = u->param_count;
+                param_types.length = u->passed_param_count;
                 break;
               }
               case BYTECODE_FOREIGN_FUNCTION: {

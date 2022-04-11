@@ -54,7 +54,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
   u8 *local = malloc(sizeof(u8) * local_scope_size);
   memset(local, 0, local_scope_size);
 
-  for(int i = 0; i < fn.param_count; i++) {
+  for(int i = 0; i < fn.passed_param_count; i++) {
     u32 size = size_of_type(fn.register_types.data[i]);
     memcpy(&local[r_to_id[i]], params[i], size);
   }
@@ -205,7 +205,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
           case BYTECODE_FUNCTION: {
             Bytecode_Function *u = (Bytecode_Function *)to_call;
             param_types = u->register_types;
-            param_types.length = u->param_count;
+            param_types.length = u->passed_param_count;
             break;
           }
           case BYTECODE_FOREIGN_FUNCTION: {

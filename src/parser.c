@@ -784,28 +784,39 @@ Ast_Node_Ptr_Array parse_function_parameters(Token_Reader *r, Scope *bound_type_
   if(first.type != TCLOSE_PAREN) {
     revert_state(r);
     while(1) {
+      save_state(r);
       Token sym = peek_token(r);
-      if(sym.type != TSYMBOL) error_unexpected_token(sym);
       Token colon = peek_token(r);
-      if(colon.type != TCOLON) error_unexpected_token(colon);
+      if(sym.type == TSYMBOL && colon.type == TCOLON) {
+        Ast_Node *type;
+        {
+          bool this_uses_bind_symbol = false;
+          type = parse_expression(r, bound_type_scope, 0, NULL, &this_uses_bind_symbol); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
+          if(this_uses_bind_symbol) result_uses_bind_symbol = true;
+        }
+        Ast_Passed_Parameter *param = (Ast_Passed_Parameter *)allocate_ast_node_type(NODE_PASSED_PARAMETER, sizeof(Ast_Passed_Parameter));
+        param->n.loc = colon.loc;
+        param->symbol = sym.data.symbol;
+        param->type_node = type;
+        param->type = UNKNOWN_TYPE;
+        Ast_Node_Ptr_Array_push(&parameters, (Ast_Node *)param);
 
-      Ast_Node *type;
-      {
+        Scope_Entry e;
+        e.symbol = sym.data.symbol;
+        e.data.reg.type = UNKNOWN_TYPE;
+        Scope_Entry_Array_push(&argument_scope->entries, e);
+      } else {
+        revert_state(r);
         bool this_uses_bind_symbol = false;
-        type = parse_expression(r, bound_type_scope, 0, NULL, &this_uses_bind_symbol); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
+        Ast_Node *expr = parse_expression(r, bound_type_scope, 0, NULL, &this_uses_bind_symbol); // we are using the parent scope here because this should be not be able to use other arguments (at least for now...)
         if(this_uses_bind_symbol) result_uses_bind_symbol = true;
+
+        Ast_Matched_Parameter *param = (Ast_Matched_Parameter *)allocate_ast_node_type(NODE_MATCHED_PARAMETER, sizeof(Ast_Matched_Parameter));
+        param->n.loc = colon.loc;
+        param->node = expr;
+        param->value = UNKNOWN_TYPE;
+        Ast_Node_Ptr_Array_push(&parameters, (Ast_Node *)param);
       }
-      Ast_Function_Parameter *param = (Ast_Function_Parameter *)allocate_ast_node_type(NODE_FUNCTION_PARAMETER, sizeof(Ast_Function_Parameter));
-      param->n.loc = colon.loc;
-      param->symbol = sym.data.symbol;
-      param->type_node = type;
-      Ast_Node_Ptr_Array_push(&parameters, (Ast_Node *)param);
-
-      Scope_Entry e;
-      e.symbol = sym.data.symbol;
-      e.data.reg.type = UNKNOWN_TYPE;
-      Scope_Entry_Array_push(&argument_scope->entries, e);
-
       Token next = peek_token(r);
       if(next.type == TCLOSE_PAREN) break;
       else if(next.type != TCOMMA) error_unexpected_token(next);
