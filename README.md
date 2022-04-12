@@ -73,8 +73,9 @@ array :: struct(T: type) {
 }
 
 // The array subscript operator, which returns a pointer to the nth element of
-// a given array a.
-subscript :: fn #inline (a: array($T), n: int) -> ^T {
+// a given array a. The #operator tag means you can call this function
+// subscript(arr, n) with the syntax arr[n].
+subscript :: fn #inline #operator (a: array($T), n: int) -> ^T {
   return bit_cast(^T, size_of(T)*n + bit_cast(int, a.data));
 }
 
