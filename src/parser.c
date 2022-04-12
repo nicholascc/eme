@@ -184,6 +184,7 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TGREATER_THAN_OR_EQUAL_TO: ast_op = OPGREATER_THAN_OR_EQUAL_TO; break;
     case TDOT: ast_op = OPSTRUCT_MEMBER; break;
     case TDOT_CARET: ast_op = OPSTRUCT_MEMBER_REF; break;
+    case TCARET_OPEN_BRACKET: ast_op = OPSUBSCRIPT_REF; break;
     case TOPEN_BRACKET: ast_op = OPSUBSCRIPT; break;
   }
 
@@ -434,7 +435,7 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
       lhs_ast = (Ast_Node *)unary_op_to_ast(op, lhs_ast, false);
       lhs_needs_semicolon = true;
 
-    } else if(op.type == TOPEN_BRACKET) {
+    } else if(op.type == TCARET_OPEN_BRACKET || op.type == TOPEN_BRACKET) {
       Ast_Node *rhs_ast = parse_expression(r, scope, 0, NULL, uses_bind_symbol);
 
       Token next = peek_token(r);
@@ -829,8 +830,9 @@ Ast_Node_Ptr_Array parse_function_parameters(Token_Reader *r, Scope *bound_type_
 Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
 
   Ast_Function_Definition *n = (Ast_Function_Definition *)allocate_ast_node_type(NODE_FUNCTION_DEFINITION, sizeof(Ast_Function_Definition));
-  n->is_inline = false;
   // parse directives
+  n->is_inline = false;
+  n->is_operator = false;
   Token open_paren;
   while(true) {
     Token number_sign = peek_token(r);
@@ -849,6 +851,9 @@ Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location
     if(s == st_get_id_of("inline", -1)) {
       if(n->is_inline) parse_error("I found the '#inline' directive multiple times in this function definition.", sym.loc, true);
       n->is_inline = true;
+    } else if(s == st_get_id_of("operator", -1)) {
+      if(n->is_operator) parse_error("I found the '#operator' directive multiple times in this function definition.", sym.loc, true);
+      n->is_operator = true;
     } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
   }
 

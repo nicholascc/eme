@@ -210,6 +210,7 @@ Bytecode_Block init_bytecode_block() {
 
 u32 add_block_to_block(Ast_Block *block_node, Bytecode_Function *fn, u32 *block);
 Bytecode_Ast_Block generate_bytecode_block(Ast_Node *node, Bytecode_Function *fn, Scope *scope);
+u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Scope *scope);
 
 u32 add_unary_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u32 a, u32 b) {
   Bytecode_Instruction inst;
@@ -234,9 +235,50 @@ u32 add_set_literal_instruction(Bytecode_Function *fn, u32 *block, int value, Ty
   Bytecode_Instruction inst;
   inst.type = BC_SET_LITERAL;
   inst.data.set_literal.lit_b = value;
-  inst.data.set_literal.reg_a = add_register(fn, solidify_type(type, *node));
+  inst.data.set_literal.reg_a = add_register(fn, solidify_type(type));
   add_instruction(&fn->blocks.data[*block], inst);
   return inst.data.set_literal.reg_a;
+}
+
+u32 add_subscript_ref(Ast_Binary_Op *n, u32 *block, Bytecode_Function *fn, Scope *scope) {
+  u32 first_reg = generate_bytecode_expr(n->first, block, fn, scope);
+  u32 second_reg = generate_bytecode_expr(n->second, block, fn, scope);
+
+  Compilation_Unit *body = n->data.overload.body;
+  type_infer_compilation_unit(body);
+  generate_bytecode_compilation_unit(body);
+
+  Type call_return_type = n->convert_to;
+  if(n->operator == OPSUBSCRIPT)
+    call_return_type.reference_count++;
+
+  u32 result_reg = add_register(fn, call_return_type);
+  {
+    Bytecode_Instruction inst;
+    inst.type = BC_CALL;
+    if(body->type == UNIT_FUNCTION_BODY)
+      inst.data.call.to = body->data.body.bytecode;
+    else if(body->type == UNIT_FOREIGN_FUNCTION)
+      inst.data.call.to = body->data.foreign.bytecode;
+    else assert(false);
+    inst.data.call.keep_return_value = call_return_type.info->type != TYPE_NOTHING;
+    inst.data.call.reg = result_reg;
+    add_instruction(&fn->blocks.data[*block], inst);
+  }
+  {
+    Bytecode_Instruction inst;
+    inst.type = BC_ARG;
+    inst.data.arg.reg = first_reg;
+    add_instruction(&fn->blocks.data[*block], inst);
+  }
+  {
+    Bytecode_Instruction inst;
+    inst.type = BC_ARG;
+    inst.data.arg.reg = second_reg;
+    add_instruction(&fn->blocks.data[*block], inst);
+  }
+
+  return result_reg;
 }
 
 // Takes a register containing type ^^^X, ^^X, ^X or X, and converts it to ^X
@@ -272,58 +314,61 @@ u32 ref_or_deref_to_single_ptr(u32 ptr_reg, u32 *block, Bytecode_Function *fn) {
 u32 generate_set_expression_ptr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Scope *scope) {
   if(node->type == NODE_BINARY_OP) {
     Ast_Binary_Op *n = (Ast_Binary_Op *)node;
-    assert(n->operator == OPSTRUCT_MEMBER);
-    u32 first_reg; // this should be a single pointer to a struct.
-    if(n->first->type == NODE_SYMBOL) {
-      Ast_Symbol *sn = (Ast_Symbol *)n->first;
-      Scope_Entry *e = get_entry_of_identifier_register_scope(sn->symbol, scope, sn->n.loc);
-      u32 struct_reg = e->data.reg.register_id;
-      first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
-    } else {
-      u32 struct_reg = generate_set_expression_ptr(n->first, block, fn, scope);
-      first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
-    }
-
-    Ast_Symbol *s = (Ast_Symbol *)n->second;
-
-    Type result_type;
-    u32 member;
-    {
-      Type first_type = fn->register_types.data[first_reg];
-      Compilation_Unit_Ptr_Array members;
-      if(first_type.info->type == TYPE_STRUCT)
-        members = first_type.info->data.struct_.members;
-      else if(first_type.info->type == TYPE_POLY_INSTANCE)
-        members = first_type.info->data.poly_instance.members;
-      else assert(false);
-
-      bool found = false;
-      for(int i = 0; i < members.length; i++) {
-        Compilation_Unit *unit = members.data[i];
-        assert(unit->type == UNIT_STRUCT_MEMBER);
-        if(unit->data.struct_member.symbol == s->symbol) {
-          found = true;
-          assert(unit->type_inferred);
-          result_type = unit->data.struct_member.type;
-          member = i;
-        }
+    if(n->operator == OPSTRUCT_MEMBER) {
+      u32 first_reg; // this should be a single pointer to a struct.
+      if(n->first->type == NODE_SYMBOL) {
+        Ast_Symbol *sn = (Ast_Symbol *)n->first;
+        Scope_Entry *e = get_entry_of_identifier_register_scope(sn->symbol, scope, sn->n.loc);
+        u32 struct_reg = e->data.reg.register_id;
+        first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
+      } else {
+        u32 struct_reg = generate_set_expression_ptr(n->first, block, fn, scope);
+        first_reg = ref_or_deref_to_single_ptr(struct_reg, block, fn);
       }
-      assert(found);
-    }
 
-    Type ptr_type = result_type;
-    ptr_type.reference_count++;
+      Ast_Symbol *s = (Ast_Symbol *)n->second;
 
-    u32 ptr_reg = add_register(fn, ptr_type);
-    {
-      Bytecode_Instruction inst;
-      inst.type = BC_GET_MEMBER_PTR;
-      inst.data.get_member_ptr.reg_a = ptr_reg;
-      inst.data.get_member_ptr.reg_b = first_reg;
-      inst.data.get_member_ptr.member = member;
-      add_instruction(&fn->blocks.data[*block], inst);
-    }
-    return ptr_reg;
+      Type result_type;
+      u32 member;
+      {
+        Type first_type = fn->register_types.data[first_reg];
+        Compilation_Unit_Ptr_Array members;
+        if(first_type.info->type == TYPE_STRUCT)
+          members = first_type.info->data.struct_.members;
+        else if(first_type.info->type == TYPE_POLY_INSTANCE)
+          members = first_type.info->data.poly_instance.members;
+        else assert(false);
+
+        bool found = false;
+        for(int i = 0; i < members.length; i++) {
+          Compilation_Unit *unit = members.data[i];
+          assert(unit->type == UNIT_STRUCT_MEMBER);
+          if(unit->data.struct_member.symbol == s->symbol) {
+            found = true;
+            assert(unit->type_inferred);
+            result_type = unit->data.struct_member.type;
+            member = i;
+          }
+        }
+        assert(found);
+      }
+
+      Type ptr_type = result_type;
+      ptr_type.reference_count++;
+
+      u32 ptr_reg = add_register(fn, ptr_type);
+      {
+        Bytecode_Instruction inst;
+        inst.type = BC_GET_MEMBER_PTR;
+        inst.data.get_member_ptr.reg_a = ptr_reg;
+        inst.data.get_member_ptr.reg_b = first_reg;
+        inst.data.get_member_ptr.member = member;
+        add_instruction(&fn->blocks.data[*block], inst);
+      }
+      return ptr_reg;
+    } else if(n->operator == OPSUBSCRIPT || n->operator == OPSUBSCRIPT_REF) {
+      return add_subscript_ref(n, block, fn, scope);
+    } else assert(false);
   } else assert(false);
 }
 
@@ -469,12 +514,25 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
             return result_reg;
           }
         }
+        case OPSUBSCRIPT:
+        case OPSUBSCRIPT_REF: {
+          u32 element_ptr_reg = add_subscript_ref(n, block, fn, scope);
+
+          if(n->operator == OPSUBSCRIPT) {
+            u32 result_reg = add_register(fn, n->convert_to);
+            return add_unary_op_instruction(&fn->blocks.data[*block], BC_LOAD,
+                                            result_reg,
+                                            element_ptr_reg);
+          } else if(n->operator == OPSUBSCRIPT_REF) {
+            return element_ptr_reg;
+          } else assert(false);
+        }
         default: {
           print_error_message("Internal compiler error: I cannot generate bytecode for this node.", node->loc);
           exit(1);
         }
       }
-
+      assert(false);
     }
     case NODE_UNARY_OP: {
       Ast_Unary_Op *n = (Ast_Unary_Op *)node;
@@ -845,5 +903,9 @@ void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
     Bytecode_Unit_Ptr_Array_push(&bytecode_units, bc_unit);
     unit->bytecode_generating = false;
     unit->bytecode_generated = true;
-  } else assert(false);
+  } else {
+    print_compilation_unit(unit);
+    assert(false);
+  }
+
 }

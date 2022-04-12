@@ -37,6 +37,7 @@ void print_token(Token t) {
     case TOPEN_BRACE:    printf("{"); break;
     case TCLOSE_BRACE:   printf("}"); break;
     case TOPEN_BRACKET:  printf("["); break;
+    case TCARET_OPEN_BRACKET: printf("^["); break;
     case TCLOSE_BRACKET: printf("]"); break;
 
     case TPLUS:            printf("+"); break;
@@ -356,7 +357,15 @@ Token_Array lex_string(char *to_lex, int file_id) {
                     t.type = TOR;
                     break;
                   }
-        case '^': t.type = TCARET; break;
+        case '^': if(next_c == '[') {
+                    t.type = TCARET_OPEN_BRACKET;
+                    i++;
+                    loc.character++;
+                    break;
+                  } else {
+                    t.type = TCARET;
+                    break;
+                  }
         case '~': t.type = TTILDA; break;
         case '!': if(next_c == '=') {
                     t.type = TNOT_EQUALS;

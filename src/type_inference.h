@@ -3,7 +3,7 @@
 
 #include "ast.h"
 
-Type solidify_type(Type x, Ast_Node node);
+Type solidify_type(Type x);
 
 // DO NOT HOLD THE RETURNED POINTER! It is a pointer into a dynamic array.
 Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Location error_location, Scope **found_scope);

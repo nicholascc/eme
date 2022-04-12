@@ -199,6 +199,7 @@ typedef enum Ast_Binary_Op_Type {
   OPSTRUCT_MEMBER,
   OPSTRUCT_MEMBER_REF,
   OPSUBSCRIPT,
+  OPSUBSCRIPT_REF,
 
   OPTEST_EQUALS
 } Ast_Binary_Op_Type;
@@ -209,6 +210,11 @@ typedef struct Ast_Binary_Op {
   Ast_Node *first;
   Ast_Node *second;
   Type convert_to;
+  union {
+    struct {
+      Compilation_Unit *body;
+    } overload;
+  } data;
 } Ast_Binary_Op;
 
 typedef enum Ast_Unary_Op_Type {
@@ -318,6 +324,7 @@ typedef struct Ast_Function_Definition {
   Ast_Node *return_type_node;
   Function_Definition_Type def_type;
   bool is_inline;
+  bool is_operator;
   Type return_type; // not relevant for FN_POLYMORPHIC
   Scope bound_type_scope;
   Scope parameter_scope; // subscope of bound_type_scope

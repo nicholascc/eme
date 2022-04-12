@@ -22,7 +22,29 @@ typedef struct Argument {
   } data;
 } Argument;
 
-bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit *unit, Ast_Function_Call *n, bool *unit_poisoned);
+// return_type is set if the function returns true.
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
+
+// doesn't free arguments
+bool call_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Type *return_type, Compilation_Unit **body, Scope *scope) {
+  while(true) {
+    for(int i = 0; i < scope->entries.length; i++) {
+      Scope_Entry *e = &scope->entries.data[i];
+      Compilation_Unit *u = e->data.unit.unit;
+      if(e->symbol == identifier && scope->type == UNIT_SCOPE) {
+        bool matches = try_function_call(arguments, argument_count, is_operator, u, return_type, body, NULL);
+        if(matches)
+          return true;
+      }
+    }
+
+    if(scope->has_parent)
+      scope = scope->parent;
+    else
+      break;
+  }
+  return false;
+}
 
 
 void type_inference_error(char *message, Location l, bool *unit_poisoned) {
@@ -94,7 +116,7 @@ bool can_implicitly_cast_type(Type before, Type after) {
   return can_implicitly_cast_type_info(before.info, after.info);
 }
 
-Type solidify_type(Type x, Ast_Node node) {
+Type solidify_type(Type x) {
   if(x.info->type == TYPE_POISON) return POISON_TYPE;
   else if(x.info->type == TYPE_UNKNOWN_INT) {
     return INT_TYPE;
@@ -102,7 +124,7 @@ Type solidify_type(Type x, Ast_Node node) {
     return x;
   else {
     print_type_info(x);
-    print_error_message("I don't know how to make this type concrete.", node.loc);
+    print_error_message("I don't know how to make this type concrete.", NULL_LOCATION);
     return POISON_TYPE;
   }
 }
@@ -319,7 +341,7 @@ Type infer_type_of_decl(Ast_Node *decl, Scope *scope, Compilation_Unit *unit, bo
     if(e->data.reg.type.info->type != TYPE_UNKNOWN) return e->data.reg.type;
 
     Type inferred_type = infer_type_of_expr(n->value, scope, unit, true, unit_poisoned);
-    e->data.reg.type = solidify_type(inferred_type, n->n);
+    e->data.reg.type = solidify_type(inferred_type);
     if(e->data.reg.type.info->type == TYPE_POISON) *unit_poisoned = true;
     return e->data.reg.type;
 
@@ -520,27 +542,19 @@ bool assign_bound_type_to_poly_function_arguments(Scope *scope, Scope *instance_
         identifier = sym->symbol;
       }
 
-      // edited version of get_entry_of_identifier_in_scope
-      Scope *current_scope = scope;
-      while(true) {
-        for(int i = 0; i < current_scope->entries.length; i++) {
-          Scope_Entry *e = &current_scope->entries.data[i];
-          if(e->symbol == identifier && current_scope->type == UNIT_SCOPE) {
-            bool matches = try_function_call(arguments, n->arguments.length, e->data.unit.unit, n, NULL);
-            if(matches) {
-              free(arguments);
-              return e->data.unit.unit == passed_type.info->data.poly_instance.definition_unit;
-            }
-          }
+      {
+        Type return_type;
+        Compilation_Unit *body;
+        if(call_function(identifier, arguments, n->arguments.length, false, &return_type, &body, scope)) {
+          free(arguments);
+          n->return_type = return_type;
+          n->body = body;
+          return body == passed_type.info->data.poly_instance.definition_unit;
+        } else {
+          free(arguments);
+          return false;
         }
-
-        if(current_scope->has_parent)
-          current_scope = current_scope->parent;
-        else
-          break;
       }
-      free(arguments);
-      return false;
     }
     case NODE_SYMBOL: {
       Ast_Symbol *n = (Ast_Symbol *)node;
@@ -568,13 +582,12 @@ bool assign_bound_type_to_poly_function_arguments(Scope *scope, Scope *instance_
   }
 }
 
-bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit *unit, Ast_Function_Call *n, bool *unit_poisoned) {
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
   if(unit->type == UNIT_FUNCTION_SIGNATURE) {
-    n->body = unit->data.signature.body;
     type_infer_compilation_unit(unit);
 
     Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-    if(argument_count != def->parameters.length)
+    if(argument_count != def->parameters.length || (is_operator && !def->is_operator))
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -592,13 +605,13 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
         } else assert(false);
       }
     }
-    n->return_type = def->return_type;
+    *return_type = def->return_type;
+    *to_call = unit;
     return true;
   } else if(unit->node->type == NODE_FOREIGN_DEFINITION) {
-    n->body = unit;
     type_infer_compilation_unit(unit);
     Ast_Foreign_Definition *def = (Ast_Foreign_Definition *)unit->node;
-    if(argument_count != def->parameter_types.length)
+    if(argument_count != def->parameter_types.length || is_operator)
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -610,13 +623,14 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
           return false;
       }
     }
-    n->return_type = def->return_type;
+    *return_type = def->return_type;
+    *to_call = unit;
     return true;
   } else if(unit->type == UNIT_POLY_FUNCTION) {
     type_infer_compilation_unit(unit);
 
     Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-    if(argument_count != def->parameters.length)
+    if(argument_count != def->parameters.length || (is_operator && !def->is_operator))
       return false;
     else {
       // we establish a 1:1 mapping from scope entries in the BOUND_TYPE_SCOPE scope to their actual types, placed in the BOUND_TYPE_INSTANCE_SCOPE
@@ -638,10 +652,10 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
 
         if(arguments[i].type == ARGUMENT_NON_TYPE) {
           Ast_Passed_Parameter *param = (Ast_Passed_Parameter *)def->parameters.data[i];
-          this_argument_matches = assign_bound_type_to_poly_function_arguments(&def->bound_type_scope, &instance_scope, param->type_node, arguments[i].data.non_type);
+          this_argument_matches = assign_bound_type_to_poly_function_arguments(&def->bound_type_scope, &instance_scope, param->type_node, solidify_type(arguments[i].data.non_type));
         } else if(arguments[i].type == ARGUMENT_TYPE) {
           Ast_Matched_Parameter *param = (Ast_Matched_Parameter *)def->parameters.data[i];
-          this_argument_matches = assign_bound_type_to_poly_function_arguments(&def->bound_type_scope, &instance_scope, param->node, arguments[i].data.type);
+          this_argument_matches = assign_bound_type_to_poly_function_arguments(&def->bound_type_scope, &instance_scope, param->node, solidify_type(arguments[i].data.type));
         } else assert(false);
 
         if(!this_argument_matches) {
@@ -655,7 +669,7 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
         if(arguments[i].type == ARGUMENT_NON_TYPE) {
           Ast_Passed_Parameter *param = (Ast_Passed_Parameter *)def->parameters.data[i];
           Type defined = type_of_type_expr(param->type_node, &instance_scope, unit, def->parameters.data[i]->loc, unit_poisoned);
-          Type passed = arguments[i].data.non_type;
+          Type passed = solidify_type(arguments[i].data.non_type);
           if(!can_implicitly_cast_type(passed, defined)) {
             free(instance_scope.entries.data);
             return false;
@@ -663,7 +677,7 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
         } else if(arguments[i].type == ARGUMENT_TYPE) {
           Ast_Matched_Parameter *param = (Ast_Matched_Parameter *)def->parameters.data[i];
           Type defined = type_of_type_expr(param->node, &instance_scope, unit, def->parameters.data[i]->loc, unit_poisoned);
-          Type passed = arguments[i].data.type;
+          Type passed = solidify_type(arguments[i].data.type);
           if(!type_equals(passed, defined))
             return false;
         } else assert(false);
@@ -717,17 +731,16 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
         new_def->body = copy_ast_node(def->body, &new_def->parameter_scope);
       }
 
-      n->body = instance;
       Ast_Function_Definition *instance_def = (Ast_Function_Definition *)instance->node;
-      n->return_type = instance_def->return_type;
+      *to_call = instance;
+      *return_type = instance_def->return_type;
       return true;
     }
   } else if(unit->type == UNIT_POLY_STRUCT) {
-    n->body = unit;
     type_infer_compilation_unit(unit);
 
     Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)unit->node;
-    if(argument_count != def->parameters.length)
+    if(argument_count != def->parameters.length || is_operator)
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -735,7 +748,8 @@ bool try_function_call(Argument *arguments, int argument_count, Compilation_Unit
           return false;
       }
     }
-    n->return_type = FTYPE_TYPE;
+    *return_type = FTYPE_TYPE;
+    *to_call = unit;
     return true;
   } else assert(false);
 }
@@ -799,15 +813,15 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
               default: assert(false);
             }
             Type to = allocate_unknown_int_type(c);
-            n->convert_to = solidify_type(to, *node);
+            n->convert_to = solidify_type(to);
             return to;
           }
           if(can_implicitly_cast_type(first, second)) {
-            n->convert_to = solidify_type(second, *node);
+            n->convert_to = solidify_type(second);
             return second;
           }
           if(can_implicitly_cast_type(second, first)) {
-            n->convert_to = solidify_type(first, *node);
+            n->convert_to = solidify_type(first);
             return first;
           }
           error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
@@ -827,9 +841,9 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
              (second.info->type != TYPE_INT && second.info->type != TYPE_UNKNOWN_INT))
             type_inference_error("The operands to a comparison operator must be integers.", node->loc, unit_poisoned);
           if(can_implicitly_cast_type(first, second))
-            n->convert_to = solidify_type(second, *node);
+            n->convert_to = solidify_type(second);
           else if(can_implicitly_cast_type(second, first))
-            n->convert_to = solidify_type(first, *node);
+            n->convert_to = solidify_type(first);
           else {
             error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
             n->convert_to = POISON_TYPE;
@@ -895,7 +909,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
             return POISON_TYPE;
           }
           if(left.reference_count >= right.reference_count && can_implicitly_cast_type_info(right.info, left.info)) {
-            n->convert_to = solidify_type(left, *node);
+            n->convert_to = solidify_type(left);
             n->convert_to.reference_count = 0;
             if(n->convert_to.info->type == TYPE_POISON) *unit_poisoned = true;
             return left;
@@ -903,6 +917,51 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           error_cannot_implicitly_cast(right, left, node->loc, false, unit_poisoned);
           n->convert_to = POISON_TYPE;
           return POISON_TYPE;
+        }
+
+        case OPSUBSCRIPT_REF:
+        case OPSUBSCRIPT: {
+          Type first = infer_type_of_expr(n->first, scope, unit, true, unit_poisoned);
+          Type second = infer_type_of_expr(n->second, scope, unit, true, unit_poisoned);
+          if(first.info->type == TYPE_POISON || second.info->type == TYPE_POISON) return POISON_TYPE;
+
+          Argument *arguments = malloc(2*sizeof(Argument));
+          if(first.info->type == TYPE_FTYPE) {
+            arguments[0].type = ARGUMENT_TYPE;
+            arguments[0].data.type = evaluate_type_expr(n->first, scope, unit, unit_poisoned);
+          } else {
+            arguments[0].type = ARGUMENT_NON_TYPE;
+            arguments[0].data.non_type = first;
+          }
+
+          if(second.info->type == TYPE_FTYPE) {
+            arguments[1].type = ARGUMENT_TYPE;
+            arguments[1].data.type = evaluate_type_expr(n->second, scope, unit, unit_poisoned);
+          } else {
+            arguments[1].type = ARGUMENT_NON_TYPE;
+            arguments[1].data.non_type = second;
+          }
+
+          {
+            Type return_type;
+            Compilation_Unit *body;
+            if(call_function(st_get_id_of("subscript",-1), arguments, 2, true, &return_type, &body, scope)) {
+              free(arguments);
+              if(return_type.reference_count == 0) {
+                type_inference_error("A subscript operator function must return a pointer.", body->node->loc, unit_poisoned);
+                return POISON_TYPE;
+              }
+
+              if(n->operator == OPSUBSCRIPT) return_type.reference_count--;
+              n->convert_to = return_type;
+              n->data.overload.body = body;
+              return return_type;
+            } else {
+              free(arguments);
+              type_inference_error("I cannot find a function which implements the subscript operator with these argument types.", node->loc, unit_poisoned);
+              return POISON_TYPE;
+            }
+          }
         }
 
         default:
@@ -1004,8 +1063,8 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           n->return_type = POISON_TYPE;
           return n->return_type;
         }
-        Type to = solidify_type(type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned), *n->arguments.data[0]);
-        Type from = solidify_type(infer_type_of_expr(n->arguments.data[1], scope, unit, true, unit_poisoned), *n->arguments.data[1]);
+        Type to = solidify_type(type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned));
+        Type from = solidify_type(infer_type_of_expr(n->arguments.data[1], scope, unit, true, unit_poisoned));
         if(size_of_type(to) != size_of_type(from)) {
           type_inference_error(NULL, node->loc, unit_poisoned);
           printf("I cannot bit_cast from ");
@@ -1034,37 +1093,25 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           } else {
             Argument a;
             a.type = ARGUMENT_NON_TYPE;
-            a.data.non_type = solidify_type(passed, *n->arguments.data[i]);
+            a.data.non_type = solidify_type(passed);
             arguments[i] = a;
           }
         }
-
-        // edited version of get_entry_of_identifier_in_scope
-        Scope *current_scope = scope;
-        while(true) {
-          for(int i = 0; i < current_scope->entries.length; i++) {
-            Scope_Entry *e = &current_scope->entries.data[i];
-            if(e->symbol == identifier && current_scope->type == UNIT_SCOPE) {
-              bool matches = try_function_call(arguments, n->arguments.length, e->data.unit.unit, n, unit_poisoned);
-              if(matches) {
-                free(arguments);
-                return n->return_type;
-              }
-            }
+        {
+          Type return_type;
+          Compilation_Unit *body;
+          if(call_function(identifier, arguments, n->arguments.length, false, &return_type, &body, scope)) {
+            free(arguments);
+            n->return_type = return_type;
+            n->body = body;
+            return return_type;
+          } else {
+            free(arguments);
+            type_inference_error(NULL, node->loc, unit_poisoned);
+            printf("I cannot find a function %s with these argument types.\n", st_get_str_of(identifier));
+            return POISON_TYPE;
           }
-
-          if(current_scope->has_parent)
-            current_scope = current_scope->parent;
-          else
-            break;
         }
-
-
-
-        free(arguments);
-        type_inference_error(NULL, node->loc, unit_poisoned);
-        printf("I cannot find a function %s with these argument types.\n", st_get_str_of(identifier));
-        return POISON_TYPE;
       }
       assert(false);
     }

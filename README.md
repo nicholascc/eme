@@ -55,7 +55,7 @@ This produces an output executable (`out.exe`), which is your compiled Eme progr
 
 ### Example code
 
-The following is a ground-up implementation of an array data type in Eme, along with a small example of its use. The lack of operator overloading and iterators in the programming language right now make the usage of this data type difficult, but that will soon change.
+The following is a ground-up implementation of an array data type in Eme, along with a small example of its use. The lack of iterators in the programming language right now make the usage of this data type a little bit difficult, but that will soon change.
 
 ```
 // We're using the foreign function malloc to allocate data.
@@ -94,16 +94,15 @@ eme :: fn () -> int {
   arr := alloc(array(int), 10);
 
   // Use a loop to fill its contents.
-  // This is very clumsy right now, since the language doesn't have operator
-  // overloading or iterators. Those will be added soon!
+  // This is very clumsy right now, since the language doesn't have iterators.
+  // Those will be added soon!
   i := 0;
   while(i < 10) {
-    p := subscript(arr, i);
-    p = i;
+    arr[i] = i;
     i = i + 1;
   }
 
   // Return the fifth element (which should be 5)
-  return *subscript(arr,5);
+  return arr[5];
 }
 ```
