@@ -742,17 +742,9 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       n->scope.entries.data[1].data.reg.register_id = index_reg;
 
 
-      // Add conditional/updating portion to a new block block_cond.
+      // Add conditional portion to a new block block_cond.
       Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
       u32 block_cond = fn->blocks.length - 1;
-
-      generate_bytecode_compilation_unit(n->element_body);
-      add_call(fn, block_cond, n->element_body, n->element_type, element_reg);
-      add_arg(fn, block_cond, iterator_reg);
-
-      generate_bytecode_compilation_unit(n->index_body);
-      add_call(fn, block_cond, n->index_body, n->element_type, index_reg);
-      add_arg(fn, block_cond, iterator_reg);
 
       generate_bytecode_compilation_unit(n->done_body);
       u32 done_reg = add_call_new_reg(fn, block_cond, n->done_body, BOOL_TYPE);
@@ -773,8 +765,21 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       add_arg(fn, block_next, iterator_ptr_reg);
 
 
-      // Add the body
-      Bytecode_Ast_Block block_body = generate_bytecode_block(n->body, fn, &n->scope);
+      // Add updating/variable-initialization portion to a new block block_body.
+      Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
+      u32 block_body = fn->blocks.length - 1;
+
+      generate_bytecode_compilation_unit(n->element_body);
+      add_call(fn, block_body, n->element_body, n->element_type, element_reg);
+      add_arg(fn, block_body, iterator_reg);
+
+      generate_bytecode_compilation_unit(n->index_body);
+      add_call(fn, block_body, n->index_body, n->index_type, index_reg);
+      add_arg(fn, block_body, iterator_reg);
+
+      // Populate the body with the actual body.
+      u32 block_body_entry = block_body;
+      generate_bytecode_expr(n->body, &block_body, fn, &n->scope);
 
 
       // Add all the branches
@@ -789,14 +794,14 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         Bytecode_Instruction to_next;
         to_next.type = BC_BRANCH;
         to_next.data.branch.block = block_next;
-        add_instruction(&fn->blocks.data[block_body.exit], to_next);
+        add_instruction(&fn->blocks.data[block_body], to_next);
       }
       {
         Bytecode_Instruction cond;
         cond.type = BC_COND_BRANCH;
         cond.data.cond_branch.reg_cond = done_reg;
         cond.data.cond_branch.block_true = *block;
-        cond.data.cond_branch.block_false = block_body.entry;
+        cond.data.cond_branch.block_false = block_body_entry;
         add_instruction(&fn->blocks.data[block_cond], cond);
       }
       return -1;
