@@ -55,7 +55,7 @@ This produces an output executable (`out.exe`), which is your compiled Eme progr
 
 ### Example code
 
-The following is a ground-up implementation of an array data type in Eme, along with a small example of its use. The lack of iterators in the programming language right now make the usage of this data type a little bit difficult, but that will soon change.
+The following is a ground-up implementation of an array data type in Eme, along with a small example of its use. The implementation includes a subscript operator overload and an iterator implementation, so that the data structure is easily used in user programs.
 
 ```
 // We're using the foreign function malloc to allocate data.
@@ -89,21 +89,58 @@ alloc :: fn #inline (array($T), length: int) -> array(T) {
   return r;
 }
 
+
+
 // This is the current name of the main function.
 eme :: fn () -> int {
   // Allocate an array
   arr := alloc(array(int), 10);
 
-  // Use a loop to fill its contents.
-  // This is very clumsy right now, since the language doesn't have iterators.
-  // Those will be added soon!
-  i := 0;
-  while(i < 10) {
-    arr[i] = i;
-    i = i + 1;
-  }
+  // Use a loop to fill its contents, by calculating squares from 0-9.
+  // This uses an iterator, implemented for the array datatype below this function.
+  each(arr) it = it_index*it_index;
 
-  // Return the fifth element (which should be 5)
+  // Return the sixth element (which should be 25)
   return arr[5];
 }
+
+
+
+
+// This is the struct representing the iterator type.
+array_iter :: struct(T: type) {
+  arr: array(T);
+  index: int;
+}
+
+// Creates a new iterator from an array.
+iterator_make :: fn #inline #operator (a: array($T)) -> array_iter(T) {
+  r: array_iter(T);
+  r.arr = a;
+  r.index = 0;
+  return r;
+}
+
+// Gets element the iterator is currently at.
+iterator_element :: fn #inline #operator (a: array_iter($T)) -> ^T {
+  return a.arr^[a.index]; // This operator returns the pointer to the element in
+                          // the array, rather than the element itself. This is
+                          // automatically defined with the subscript operator.
+}
+
+// Gets the index of the element the iterator is currently at.
+iterator_index :: fn #inline #operator (a: array_iter($T)) -> int {
+  return a.index;
+}
+
+// Gets whether the iterator is finished going through the whole array.
+iterator_done :: fn #inline #operator (a: array_iter($T)) -> bool {
+  return a.index >= a.arr.length;
+}
+
+// Moves the iterator to the next element.
+iterator_next :: fn #inline #operator (a: ^array_iter($T)) {
+  a.index = a.index + 1;
+}
+
 ```
