@@ -27,6 +27,9 @@ void print_token(Token t) {
   } else if(t.type == TLITERAL_BOOL) {
     printf("LITERAL_BOOL(%s)\n", t.data.literal_bool ? "true" : "false");
     return;
+  } else if(t.type == TLITERAL_STRING) {
+    printf("LITERAL_STRING(\"%s\")\n", t.data.literal_string);
+    return;
   }
 
 
@@ -289,6 +292,34 @@ Token_Array lex_string(char *to_lex, int file_id) {
       t.data.literal_int = value;
       i += len-1;
       loc.character += len-1;
+      Token_Array_push(&tokens, t);
+    } else if(c == '\"') { // string literal
+      Token t;
+      t.loc = loc;
+      t.type = TLITERAL_STRING;
+
+      int len = 0;
+      while(to_lex[i + (++len)] != '\"') {}; // currently no support for escaping
+
+      loc.character++;
+      i += 1;
+
+      char *result_str = malloc((len) * sizeof(char));
+      int str_start = i;
+      while(i < len-1 + str_start) {
+        result_str[i-str_start] = to_lex[i];
+        if(c == '\n') {
+          loc.character = 0;
+          loc.line++;
+          line_is_commented = false;
+          continue;
+        }
+        loc.character++;
+        i += 1;
+      }
+      result_str[i-1] = 0;
+
+      t.data.literal_string = result_str;
       Token_Array_push(&tokens, t);
     } else { // some syntax token
 
