@@ -1168,6 +1168,89 @@ Type infer_types_of_block(Ast_Node *node_block, Compilation_Unit *unit, bool usi
         break;
       }
 
+      case NODE_EACH: {
+        last_statement_type = NOTHING_TYPE;
+        Ast_Each *n = (Ast_Each *)node;
+        Type collection = infer_type_of_expr(n->collection, &block->scope, unit, true, unit_poisoned);
+
+        {
+          Argument a;
+          if(collection.info->type == TYPE_FTYPE) {
+            a.type = ARGUMENT_TYPE;
+            a.data.type = evaluate_type_expr(n->collection, &block->scope, unit, unit_poisoned);
+          } else {
+            a.type = ARGUMENT_NON_TYPE;
+            a.data.non_type = collection;
+          }
+
+          if(!call_function(st_get_id_of("iterator_make",-1), &a, 1, true, &n->iterator_type, &n->make_body, &block->scope)) {
+            type_inference_error("I cannot find a function which implements the iterator_make operator with these argument types.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+        }
+
+        {
+          Argument a;
+          a.type = ARGUMENT_NON_TYPE;
+          a.data.non_type = n->iterator_type;
+          if(!call_function(st_get_id_of("iterator_element",-1), &a, 1, true, &n->element_type, &n->element_body, &block->scope)) {
+            type_inference_error("I cannot find a function which implements the iterator_element operator with these argument types.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+        }
+
+        {
+          Argument a;
+          a.type = ARGUMENT_NON_TYPE;
+          a.data.non_type = n->iterator_type;
+          if(!call_function(st_get_id_of("iterator_index",-1), &a, 1, true, &n->index_type, &n->index_body, &block->scope)) {
+            type_inference_error("I cannot find a function which implements the iterator_index operator with these argument types.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+        }
+
+        {
+          Argument a;
+          a.type = ARGUMENT_NON_TYPE;
+          a.data.non_type = n->iterator_type;
+          Type return_type;
+          if(!call_function(st_get_id_of("iterator_done",-1), &a, 1, true, &return_type, &n->done_body, &block->scope)) {
+            type_inference_error("I cannot find a function which implements the iterator_done operator with these argument types.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+          if(!type_equals(return_type, BOOL_TYPE)) {
+            type_inference_error("The function I found implementing the iterator_done operator with these argument types does not return a boolean result.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+        }
+
+        {
+          Argument a;
+          a.type = ARGUMENT_NON_TYPE;
+          a.data.non_type = n->iterator_type;
+          a.data.non_type.reference_count++;
+          Type return_type;
+          if(!call_function(st_get_id_of("iterator_next",-1), &a, 1, true, &return_type, &n->next_body, &block->scope)) {
+            type_inference_error("I cannot find a function which implements the iterator_next operator with these argument types.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+          if(!type_equals(return_type, NOTHING_TYPE)) {
+            type_inference_error("The function I found implementing the iterator_next operator with these argument types returns a result; it should return nothing.", node->loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+        }
+
+        assert(n->scope.type == REGISTER_SCOPE);
+        assert(n->scope.entries.length == 2);
+        assert(n->scope.entries.data[0].symbol == n->element);
+        n->scope.entries.data[0].data.reg.type = n->element_type;
+        assert(n->scope.entries.data[1].symbol == n->index);
+        n->scope.entries.data[1].data.reg.type = n->index_type;
+
+        Type body = infer_type_of_expr(n->body, &n->scope, unit, false, unit_poisoned);
+        break;
+      }
+
       case NODE_TYPED_DECL:
       case NODE_UNTYPED_DECL_SET:
       case NODE_TYPED_DECL_SET: {

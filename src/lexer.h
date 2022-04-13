@@ -68,6 +68,7 @@ typedef enum Token_Type {
   TIF,
   TELSE,
   TWHILE,
+  TEACH,
 
   TLITERAL_INT,
   TLITERAL_BOOL,

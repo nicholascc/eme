@@ -95,7 +95,8 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         break;
       }
       case BC_EQUALS:
-      case BC_LESS_THAN: {
+      case BC_LESS_THAN:
+      case BC_LESS_THAN_EQUALS: {
         u32 reg_a = inst.data.bin_op.reg_a;
         u32 reg_b = inst.data.bin_op.reg_b;
         u32 reg_c = inst.data.bin_op.reg_c;
@@ -110,12 +111,17 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
 
         bool a;
         if(inst.type == BC_LESS_THAN) {
-          // better way to do this comparison?
           if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
-            // do a signed comparison using pointer casts.
             a = *((s64 *)&b) < *((s64 *)&c);
           } else {
             a = b < c;
+          }
+        } else if(inst.type == BC_LESS_THAN_EQUALS) {
+          a = b == c;
+          if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
+            a |= *((s64 *)&b) < *((s64 *)&c);
+          } else {
+            a |= b < c;
           }
         } else if(inst.type == BC_EQUALS) {
           a = b == c;

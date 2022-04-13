@@ -16,6 +16,7 @@ typedef enum Ast_Node_Type {
   NODE_UNARY_OP,
   NODE_IF,
   NODE_WHILE,
+  NODE_EACH,
   NODE_FUNCTION_CALL,
   NODE_SYMBOL,
   NODE_BIND_SYMBOL,
@@ -247,6 +248,23 @@ typedef struct Ast_While {
   Ast_Node *cond;
   Ast_Node *body;
 } Ast_While;
+
+typedef struct Ast_Each {
+  Ast_Node n;
+  symbol element;
+  symbol index;
+  Ast_Node *collection;
+  Ast_Node *body;
+  Compilation_Unit *make_body;
+  Compilation_Unit *element_body;
+  Compilation_Unit *index_body;
+  Compilation_Unit *done_body;
+  Compilation_Unit *next_body;
+  Type iterator_type;
+  Type element_type;
+  Type index_type;
+  Scope scope;
+} Ast_Each;
 
 typedef struct Ast_Function_Call {
   Ast_Node n;

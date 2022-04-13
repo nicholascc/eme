@@ -184,7 +184,8 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
         }
 
         case BC_EQUALS:
-        case BC_LESS_THAN: {
+        case BC_LESS_THAN:
+        case BC_LESS_THAN_EQUALS: {
           LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
           LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
           Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
@@ -199,6 +200,8 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMIntPredicate pred;
           if(inst.type == BC_LESS_THAN) {
             pred = conv_type.info->data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
+          } else if(inst.type == BC_LESS_THAN_EQUALS) {
+            pred = conv_type.info->data.integer.is_signed ? LLVMIntSLE : LLVMIntULE;
           } else if(inst.type == BC_EQUALS) {
             pred = LLVMIntEQ;
           } else assert(false);
@@ -410,12 +413,16 @@ void llvm_generate_module(Bytecode_Unit_Ptr_Array units, char *out_obj, char *ou
   LLVMSetTarget(mod, triple);
 
 
-  LLVMPassManagerBuilderRef pass_manager_builder = LLVMPassManagerBuilderCreate();
-  LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 1);
+
   LLVMPassManagerRef pass_manager = LLVMCreatePassManager();
-  LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
-  LLVMPassManagerBuilderDispose(pass_manager_builder);
+  LLVMAddPromoteMemoryToRegisterPass(pass_manager);
   LLVMAddAlwaysInlinerPass(pass_manager);
+  {
+    LLVMPassManagerBuilderRef pass_manager_builder = LLVMPassManagerBuilderCreate();
+    LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 1);
+    LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
+    LLVMPassManagerBuilderDispose(pass_manager_builder);
+  }
   LLVMRunPassManager(pass_manager, mod);
   LLVMDisposePassManager(pass_manager);
 

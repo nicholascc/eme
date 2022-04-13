@@ -161,6 +161,19 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_EACH: {
+      Ast_Each *n = (Ast_Each *)node;
+      printf("each(");
+      print_symbol(n->element);
+      printf(", ");
+      print_symbol(n->index);
+      printf(": ");
+      print_ast_node(n->collection);
+      printf(") ");
+      print_ast_node(n->body);
+      break;
+    }
+
     case NODE_FUNCTION_CALL: {
       Ast_Function_Call *n = (Ast_Function_Call *)node;
       print_ast_node(n->identifier);
@@ -446,6 +459,12 @@ Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
     case NODE_WHILE: {
       Ast_While *r = (Ast_While *)allocate_ast_node(node, sizeof(Ast_While));
       r->cond = copy_ast_node(r->cond, scope);
+      r->body = copy_ast_node(r->body, scope);
+      return (Ast_Node *)r;
+    }
+    case NODE_EACH: {
+      Ast_Each *r = (Ast_Each *)allocate_ast_node(node, sizeof(Ast_Each));
+      r->collection = copy_ast_node(r->collection, scope);
       r->body = copy_ast_node(r->body, scope);
       return (Ast_Node *)r;
     }

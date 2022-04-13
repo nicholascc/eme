@@ -87,6 +87,7 @@ void print_token(Token t) {
     case TIF:      printf("if"); break;
     case TELSE:    printf("else"); break;
     case TWHILE:   printf("while"); break;
+    case TEACH:   printf("each"); break;
     default: printf("unknown: %i", t.type); break;
   }
   printf("\")\n");
@@ -260,6 +261,8 @@ Token_Array lex_string(char *to_lex, int file_id) {
         t.type = TFOREIGN;
       } else if(len == 5 && 0 == memcmp(symbol_str, "while", 5)) {
         t.type = TWHILE;
+      } else if(len == 4 && 0 == memcmp(symbol_str, "each", 4)) {
+        t.type = TEACH;
       } else if(len == 4 && 0 == memcmp(symbol_str, "true", 4)) {
         t.type = TLITERAL_BOOL;
         t.data.literal_bool = true;

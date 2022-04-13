@@ -91,6 +91,7 @@ int main(int argc, char *argv[]) {
   }
 
   if(mode == MODE_INTERPRET) {
+    print_bytecode_unit(main);
     printf("Running input code...\n");
     printf("Result: %lli\n", *((s64 *)interpret_bytecode_unit(main, NULL)));
   } else if(mode == MODE_COMPILE) {

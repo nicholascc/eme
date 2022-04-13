@@ -15,6 +15,7 @@ typedef enum Bytecode_Instruction_Type {
 
   BC_EQUALS,
   BC_LESS_THAN,
+  BC_LESS_THAN_EQUALS,
 
   BC_SET,
   BC_SET_LITERAL,

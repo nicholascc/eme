@@ -62,6 +62,9 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       printf("less_than r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
     }
+    case BC_LESS_THAN_EQUALS: {
+      printf("less_than_equals r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+    }
     case BC_SET_LITERAL: {
       printf("set r%i <- %lli\n", inst.data.set_literal.reg_a, inst.data.set_literal.lit_b);
       break;
@@ -240,44 +243,52 @@ u32 add_set_literal_instruction(Bytecode_Function *fn, u32 *block, int value, Ty
   return inst.data.set_literal.reg_a;
 }
 
+void add_arg(Bytecode_Function *fn, u32 block, u32 reg) {
+  Bytecode_Instruction inst;
+  inst.type = BC_ARG;
+  inst.data.arg.reg = reg;
+  add_instruction(&fn->blocks.data[block], inst);
+}
+
+u32 add_call(Bytecode_Function *fn, u32 block, Compilation_Unit *body, Type return_type, u32 result_reg) {
+
+  Bytecode_Instruction inst;
+  inst.type = BC_CALL;
+  if(body->type == UNIT_FUNCTION_BODY)
+    inst.data.call.to = body->data.body.bytecode;
+  else if(body->type == UNIT_FOREIGN_FUNCTION)
+    inst.data.call.to = body->data.foreign.bytecode;
+  else assert(false);
+  inst.data.call.keep_return_value = return_type.info->type != TYPE_NOTHING;
+  inst.data.call.reg = result_reg;
+  add_instruction(&fn->blocks.data[block], inst);
+}
+
+u32 add_call_new_reg(Bytecode_Function *fn, u32 block, Compilation_Unit *body, Type return_type) {
+  u32 result_reg;
+  if(return_type.info->type == TYPE_NOTHING)
+    result_reg = -1;
+  else
+    result_reg = add_register(fn, return_type);
+
+  add_call(fn, block, body, return_type, result_reg);
+  return result_reg;
+}
+
 u32 add_subscript_ref(Ast_Binary_Op *n, u32 *block, Bytecode_Function *fn, Scope *scope) {
   u32 first_reg = generate_bytecode_expr(n->first, block, fn, scope);
   u32 second_reg = generate_bytecode_expr(n->second, block, fn, scope);
 
   Compilation_Unit *body = n->data.overload.body;
-  type_infer_compilation_unit(body);
   generate_bytecode_compilation_unit(body);
 
   Type call_return_type = n->convert_to;
   if(n->operator == OPSUBSCRIPT)
     call_return_type.reference_count++;
 
-  u32 result_reg = add_register(fn, call_return_type);
-  {
-    Bytecode_Instruction inst;
-    inst.type = BC_CALL;
-    if(body->type == UNIT_FUNCTION_BODY)
-      inst.data.call.to = body->data.body.bytecode;
-    else if(body->type == UNIT_FOREIGN_FUNCTION)
-      inst.data.call.to = body->data.foreign.bytecode;
-    else assert(false);
-    inst.data.call.keep_return_value = call_return_type.info->type != TYPE_NOTHING;
-    inst.data.call.reg = result_reg;
-    add_instruction(&fn->blocks.data[*block], inst);
-  }
-  {
-    Bytecode_Instruction inst;
-    inst.type = BC_ARG;
-    inst.data.arg.reg = first_reg;
-    add_instruction(&fn->blocks.data[*block], inst);
-  }
-  {
-    Bytecode_Instruction inst;
-    inst.type = BC_ARG;
-    inst.data.arg.reg = second_reg;
-    add_instruction(&fn->blocks.data[*block], inst);
-  }
-
+  u32 result_reg = add_call_new_reg(fn, *block, body, call_return_type);
+  add_arg(fn, *block, first_reg);
+  add_arg(fn, *block, second_reg);
   return result_reg;
 }
 
@@ -383,21 +394,24 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     case NODE_BINARY_OP: {
       Ast_Binary_Op *n = (Ast_Binary_Op *)node;
       switch(n->operator) {
-        #define MACRO_ADD_BINARY_BYTECODE(op_type, inst_type, result_reg)\
+        #define MACRO_ADD_BINARY_BYTECODE(op_type, inst_type, reverse, result_reg)\
           case op_type: {\
-            u32 reg_b = generate_bytecode_expr(n->first, block, fn, scope);\
-            u32 reg_c = generate_bytecode_expr(n->second, block, fn, scope);\
+            u32 reg_b = generate_bytecode_expr(reverse ? n->second : n->first, block, fn, scope);\
+            u32 reg_c = generate_bytecode_expr(reverse ? n->first : n->second, block, fn, scope);\
             return add_bin_op_instruction(&fn->blocks.data[*block], inst_type,\
                                           result_reg,\
                                           reg_b,\
                                           reg_c);\
         }
-        MACRO_ADD_BINARY_BYTECODE(OPPLUS, BC_ADD, add_register(fn, n->convert_to))
-        MACRO_ADD_BINARY_BYTECODE(OPMINUS, BC_SUB, add_register(fn, n->convert_to))
-        MACRO_ADD_BINARY_BYTECODE(OPMUL, BC_MUL, add_register(fn, n->convert_to))
-        MACRO_ADD_BINARY_BYTECODE(OPDIV, BC_DIV, add_register(fn, n->convert_to))
-        MACRO_ADD_BINARY_BYTECODE(OPEQUALS, BC_EQUALS, add_register(fn, BOOL_TYPE))
-        MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN, BC_LESS_THAN, add_register(fn, BOOL_TYPE))
+        MACRO_ADD_BINARY_BYTECODE(OPPLUS, BC_ADD, false, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPMINUS, BC_SUB, false, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPMUL, BC_MUL, false, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPDIV, BC_DIV, false, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPEQUALS, BC_EQUALS, false, add_register(fn, BOOL_TYPE))
+        MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN, BC_LESS_THAN, false, add_register(fn, BOOL_TYPE))
+        MACRO_ADD_BINARY_BYTECODE(OPGREATER_THAN, BC_LESS_THAN, true, add_register(fn, BOOL_TYPE))
+        MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN_OR_EQUAL_TO, BC_LESS_THAN_EQUALS, false, add_register(fn, BOOL_TYPE))
+        MACRO_ADD_BINARY_BYTECODE(OPGREATER_THAN_OR_EQUAL_TO, BC_LESS_THAN_EQUALS, true, add_register(fn, BOOL_TYPE))
         // lookup table maybe?
         case OPSET_EQUALS: {
           u32 value_reg = generate_bytecode_expr(n->second, block, fn, scope);
@@ -701,6 +715,92 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
 
       return -1;
     }
+    case NODE_EACH: {
+      Ast_Each *n = (Ast_Each *)node;
+
+      // Add make_iterator portion to the beginning
+      u32 collection_reg = generate_bytecode_expr(n->collection, block, fn, scope);
+
+      generate_bytecode_compilation_unit(n->make_body);
+      u32 iterator_reg = add_call_new_reg(fn, *block, n->make_body, n->iterator_type);
+      add_arg(fn, *block, collection_reg);
+
+      // Add new block after the loop
+      u32 prev_block = *block;
+      Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
+      *block = fn->blocks.length - 1;
+
+
+      u32 element_reg = add_register(fn, n->element_type);
+      u32 index_reg = add_register(fn, n->index_type);
+
+      assert(n->scope.type == REGISTER_SCOPE);
+      assert(n->scope.entries.length == 2);
+      assert(n->scope.entries.data[0].symbol == n->element);
+      n->scope.entries.data[0].data.reg.register_id = element_reg;
+      assert(n->scope.entries.data[1].symbol == n->index);
+      n->scope.entries.data[1].data.reg.register_id = index_reg;
+
+
+      // Add conditional/updating portion to a new block block_cond.
+      Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
+      u32 block_cond = fn->blocks.length - 1;
+
+      generate_bytecode_compilation_unit(n->element_body);
+      add_call(fn, block_cond, n->element_body, n->element_type, element_reg);
+      add_arg(fn, block_cond, iterator_reg);
+
+      generate_bytecode_compilation_unit(n->index_body);
+      add_call(fn, block_cond, n->index_body, n->element_type, index_reg);
+      add_arg(fn, block_cond, iterator_reg);
+
+      generate_bytecode_compilation_unit(n->done_body);
+      u32 done_reg = add_call_new_reg(fn, block_cond, n->done_body, BOOL_TYPE);
+      add_arg(fn, block_cond, iterator_reg);
+
+
+      // Add go-to-next portion to a new block block_next
+      Bytecode_Block_Array_push(&fn->blocks, init_bytecode_block(2));
+      u32 block_next = fn->blocks.length - 1;
+
+      Type iterator_ptr_type = n->iterator_type;
+      iterator_ptr_type.reference_count++;
+      u32 iterator_ptr_reg = add_register(fn, iterator_ptr_type);
+      add_unary_op_instruction(&fn->blocks.data[block_next], BC_REF_TO, iterator_ptr_reg, iterator_reg);
+
+      generate_bytecode_compilation_unit(n->next_body);
+      add_call(fn, block_next, n->next_body, NOTHING_TYPE, -1);
+      add_arg(fn, block_next, iterator_ptr_reg);
+
+
+      // Add the body
+      Bytecode_Ast_Block block_body = generate_bytecode_block(n->body, fn, &n->scope);
+
+
+      // Add all the branches
+      {
+        Bytecode_Instruction intro;
+        intro.type = BC_BRANCH;
+        intro.data.branch.block = block_cond;
+        add_instruction(&fn->blocks.data[prev_block], intro);
+        add_instruction(&fn->blocks.data[block_next], intro);
+      }
+      {
+        Bytecode_Instruction to_next;
+        to_next.type = BC_BRANCH;
+        to_next.data.branch.block = block_next;
+        add_instruction(&fn->blocks.data[block_body.exit], to_next);
+      }
+      {
+        Bytecode_Instruction cond;
+        cond.type = BC_COND_BRANCH;
+        cond.data.cond_branch.reg_cond = done_reg;
+        cond.data.cond_branch.block_true = *block;
+        cond.data.cond_branch.block_false = block_body.entry;
+        add_instruction(&fn->blocks.data[block_cond], cond);
+      }
+      return -1;
+    }
     case NODE_FUNCTION_CALL: {
       Ast_Function_Call *n = (Ast_Function_Call *)node;
       { // check for built-ins like size_of
@@ -725,7 +825,6 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         }
       }
       Compilation_Unit *body = n->body;
-      type_infer_compilation_unit(body);
       generate_bytecode_compilation_unit(body);
 
       u32 *arg_registers;
@@ -752,29 +851,10 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
       } else assert(false);
 
 
-      u32 result_reg;
-      if(n->return_type.info->type == TYPE_NOTHING)
-        result_reg = -1;
-      else
-        result_reg = add_register(fn, n->return_type);
-      {
-        Bytecode_Instruction inst;
-        inst.type = BC_CALL;
-        if(body->type == UNIT_FUNCTION_BODY) {
-          inst.data.call.to = body->data.body.bytecode;
-        } else if(body->type == UNIT_FOREIGN_FUNCTION) {
-          inst.data.call.to = body->data.foreign.bytecode;
-        } else assert(false);
-        inst.data.call.keep_return_value = n->return_type.info->type != TYPE_NOTHING;
-        inst.data.call.reg = result_reg;
-        add_instruction(&fn->blocks.data[*block], inst);
-      }
+      u32 result_reg = add_call_new_reg(fn, *block, body, n->return_type);
 
       for(int i = 0; i < arg_count; i++) {
-        Bytecode_Instruction inst;
-        inst.type = BC_ARG;
-        inst.data.arg.reg = arg_registers[i];
-        add_instruction(&fn->blocks.data[*block], inst);
+        add_arg(fn, *block, arg_registers[i]);
       }
       return result_reg;
     }
@@ -857,6 +937,7 @@ void generate_bytecode_function(Bytecode_Function *r, Ast_Function_Definition *d
 }
 
 void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
+  type_infer_compilation_unit(unit);
   if(unit->bytecode_generated || unit->bytecode_generating || unit->poisoned) return;
   if(unit->type == UNIT_FUNCTION_BODY) {
     assert(unit->node->type == NODE_FUNCTION_DEFINITION);

@@ -49,6 +49,8 @@ bool is_infix_operator(Token t) {
     case TGREATER_THAN_OR_EQUAL_TO:
     case TDOT:
     case TDOT_CARET:
+    case TOPEN_BRACKET:
+    case TCARET_OPEN_BRACKET:
     case TQUESTION_MARK:
       return true;
     default: return false;
@@ -299,6 +301,8 @@ u8_pair binary_op_binding_power(Token_Type type) {
 
     case TDOT:
     case TDOT_CARET:
+    case TOPEN_BRACKET:
+    case TCARET_OPEN_BRACKET:
       return (u8_pair){49,50};
     default: assert(false && "(internal compiler error) binary op does not exist");
   }
@@ -424,6 +428,13 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
           error_unexpected_token(next);
         Ast_Node *rhs_ast = parse_expression(r, scope, powers.right, NULL, uses_bind_symbol);
         lhs_ast = (Ast_Node *)if_to_ast(lhs_ast, op.loc, mhs_ast, rhs_ast);
+      } else if(op.type == TOPEN_BRACKET || op.type == TCARET_OPEN_BRACKET) {
+        Ast_Node *rhs_ast = parse_expression(r, scope, 0, NULL, uses_bind_symbol);
+        Token next = peek_token(r);
+        if(next.type != TCLOSE_BRACKET)
+          error_unexpected_token(next);
+        lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
+        lhs_needs_semicolon = true;
       } else {
         Ast_Node *rhs_ast = parse_expression(r, scope, powers.right, NULL, uses_bind_symbol);
         lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
@@ -433,17 +444,6 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
 
     } else if(is_postfix_operator(op)) {
       lhs_ast = (Ast_Node *)unary_op_to_ast(op, lhs_ast, false);
-      lhs_needs_semicolon = true;
-
-    } else if(op.type == TCARET_OPEN_BRACKET || op.type == TOPEN_BRACKET) {
-      Ast_Node *rhs_ast = parse_expression(r, scope, 0, NULL, uses_bind_symbol);
-
-      Token next = peek_token(r);
-      if(next.type != TCLOSE_BRACKET) {
-        error_unexpected_token(next);
-      }
-
-      lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
       lhs_needs_semicolon = true;
     } else if(op.type == TOPEN_PAREN) {
       lhs_ast = (Ast_Node *)parse_function_call(r, scope, lhs_ast, op, uses_bind_symbol);
@@ -525,7 +525,7 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
     {
       Token t = peek_token(r);
       if(t.type != TOPEN_PAREN) {
-        print_error_message("The conditional for an if statement must be parenthesized.", t.loc);
+        print_error_message("The conditional for a while statement must be parenthesized.", t.loc);
         exit(1);
       }
     }
@@ -537,6 +537,76 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
       if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
     }
     n->body = parse_any_statement(r, scope, false);
+    return (Ast_Node *)n;
+  } else if(first.type == TEACH) {
+    {
+      Token t = peek_token(r);
+      if(t.type != TOPEN_PAREN) {
+        print_error_message("The iteration definition of an each statement must be parenthesized.", t.loc);
+        exit(1);
+      }
+    }
+    Ast_Each *n = (Ast_Each *)allocate_ast_node_type(NODE_EACH, sizeof(Ast_Each));
+    n->n.loc = first.loc;
+    n->element = st_get_id_of("it", -1);
+    n->index = st_get_id_of("it_index", -1);
+
+    {
+      save_state(r);
+      Token first_sym = peek_token(r);
+      if(first_sym.type != TSYMBOL) {
+        revert_state(r);
+        goto each_vars_done;
+      }
+
+      Token comma = peek_token(r);
+      if(comma.type == TCOLON) {
+        n->element = first_sym.data.symbol;
+        goto each_vars_done;
+      } else if(comma.type != TCOMMA) {
+        revert_state(r);
+        goto each_vars_done;
+      }
+
+      Token second_sym = peek_token(r);
+      if(second_sym.type != TSYMBOL) {
+        error_unexpected_token(second_sym);
+      }
+      Token colon = peek_token(r);
+      if(colon.type != TCOLON) {
+        error_unexpected_token(colon);
+      }
+
+      n->element = first_sym.data.symbol;
+      n->index = second_sym.data.symbol;
+    }
+    each_vars_done:
+
+    n->collection = parse_expression(r, scope, 0, NULL, NULL);
+
+    {
+      Token t = peek_token(r);
+      if(t.type != TCLOSE_PAREN) error_unexpected_token(t);
+    }
+
+    n->scope.type = REGISTER_SCOPE;
+    n->scope.has_parent = true;
+    n->scope.parent = scope;
+    n->scope.entries = init_Scope_Entry_Array(2);
+    {
+      Scope_Entry e;
+      e.symbol = n->element;
+      e.data.reg.type = UNKNOWN_TYPE;
+      Scope_Entry_Array_push(&n->scope.entries, e);
+    }
+    {
+      Scope_Entry e;
+      e.symbol = n->index;
+      e.data.reg.type = UNKNOWN_TYPE;
+      Scope_Entry_Array_push(&n->scope.entries, e);
+    }
+
+    n->body = parse_any_statement(r, &n->scope, false);
     return (Ast_Node *)n;
   }
 
