@@ -31,10 +31,16 @@ void init_file_array(void) {
 }
 
 // @Incomplete: check if file has already been added
-char *add_file(char *filename) {
+int add_file(char *filename) {
+  for(int i = 0; i < files.length; i++) {
+    if(strcmp(filename, files.data[i].filename) == 0) {
+      return i;
+    }
+  }
   File_Data d;
   d.filename = filename;
   d.contents = os_load_file(filename);
+  d.parsed = false;
   File_Array_push(&files, d);
-  return d.contents;
+  return files.length-1;
 }

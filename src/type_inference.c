@@ -6,6 +6,7 @@
 #include "ast.h"
 #include "bytecode.h"
 #include "errors.h"
+#include "files.h"
 
 
 // Used to call try_function_call
@@ -23,18 +24,44 @@ typedef struct Argument {
 } Argument;
 
 // return_type is set if the function returns true.
-bool try_function_call(Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, bool is_export, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
+
+bool call_exported_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
+  assert(unit->type == UNIT_IMPORT);
+  type_infer_compilation_unit(unit);
+
+  Compilation_Unit *module = unit->data.import.module;
+  assert(module->type == UNIT_MODULE);
+  assert(module->data.module.scope.type == UNIT_SCOPE);
+
+  for(int i = 0; i < module->data.module.scope.entries.length; i++) {
+    Scope_Entry e = module->data.module.scope.entries.data[i];
+    Compilation_Unit *u = e.data.unit.unit;
+    if(e.symbol == identifier) {
+      bool matches = try_function_call(arguments, argument_count, is_operator, true, u, return_type, to_call, NULL);
+      if(matches)
+        return true;
+    }
+  }
+  return false;
+}
 
 // doesn't free arguments
 bool call_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Type *return_type, Compilation_Unit **body, Scope *scope) {
   while(true) {
     for(int i = 0; i < scope->entries.length; i++) {
-      Scope_Entry *e = &scope->entries.data[i];
-      Compilation_Unit *u = e->data.unit.unit;
-      if(e->symbol == identifier && scope->type == UNIT_SCOPE) {
-        bool matches = try_function_call(arguments, argument_count, is_operator, u, return_type, body, NULL);
-        if(matches)
-          return true;
+      Scope_Entry e = scope->entries.data[i];
+      Compilation_Unit *u = e.data.unit.unit;
+      if(scope->type == UNIT_SCOPE) {
+        if(e.symbol == identifier) {
+          bool matches = try_function_call(arguments, argument_count, is_operator, false, u, return_type, body, NULL);
+          if(matches)
+            return true;
+        } else if(e.symbol == st_get_id_of("*",-1)) {
+          bool matches = call_exported_function(identifier, arguments, argument_count, is_operator, u, return_type, body, NULL);
+          if(matches)
+            return true;
+        }
       }
     }
 
@@ -582,12 +609,12 @@ bool assign_bound_type_to_poly_function_arguments(Scope *scope, Scope *instance_
   }
 }
 
-bool try_function_call(Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, bool is_export, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
   if(unit->type == UNIT_FUNCTION_SIGNATURE) {
     type_infer_compilation_unit(unit);
 
     Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-    if(argument_count != def->parameters.length || (is_operator && !def->is_operator))
+    if(argument_count != def->parameters.length || (is_operator && !def->is_operator) || (is_export && !def->is_export))
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -611,7 +638,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
   } else if(unit->node->type == NODE_FOREIGN_DEFINITION) {
     type_infer_compilation_unit(unit);
     Ast_Foreign_Definition *def = (Ast_Foreign_Definition *)unit->node;
-    if(argument_count != def->parameter_types.length || is_operator)
+    if(argument_count != def->parameter_types.length || is_operator || (is_export && !def->is_export))
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -630,7 +657,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
     type_infer_compilation_unit(unit);
 
     Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-    if(argument_count != def->parameters.length || (is_operator && !def->is_operator))
+    if(argument_count != def->parameters.length || (is_operator && !def->is_operator) || (is_export && !def->is_export))
       return false;
     else {
       // we establish a 1:1 mapping from scope entries in the BOUND_TYPE_SCOPE scope to their actual types, placed in the BOUND_TYPE_INSTANCE_SCOPE
@@ -740,7 +767,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
     type_infer_compilation_unit(unit);
 
     Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)unit->node;
-    if(argument_count != def->parameters.length || is_operator)
+    if(argument_count != def->parameters.length || is_operator || (is_export && !def->is_export))
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -1378,6 +1405,24 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
     }
     case UNIT_POLY_FUNCTION: {
       type_infer_polymorphic_function((Ast_Function_Definition *)unit->node, unit, &unit->poisoned);
+      break;
+    }
+    case UNIT_IMPORT: {
+      assert(unit->node->type == NODE_IMPORT);
+
+      Ast_Import *import = (Ast_Import *)unit->node;
+      int file_id = add_file(import->filename);
+      parse_file(file_id);
+      File_Data *file_data = files.data+file_id;
+      assert(file_data->parsed);
+      unit->data.import.module = file_data->module;
+      break;
+    }
+    case UNIT_MODULE: {
+      for(int i = 0; i < unit->data.module.scope.entries.length; i++) {
+        Scope_Entry entry = unit->data.module.scope.entries.data[i];
+        type_infer_compilation_unit(entry.data.unit.unit);
+      }
       break;
     }
     default:

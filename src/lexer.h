@@ -64,6 +64,7 @@ typedef enum Token_Type {
   TFN,
   TSTRUCT,
   TFOREIGN,
+  TIMPORT,
   TRETURN,
   TIF,
   TELSE,

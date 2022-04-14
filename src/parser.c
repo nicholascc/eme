@@ -9,6 +9,7 @@
 #include "errors.h"
 #include "symbol_table.h"
 #include "bytecode.h"
+#include "files.h"
 
 
 
@@ -51,6 +52,7 @@ bool is_infix_operator(Token t) {
     case TDOT_CARET:
     case TOPEN_BRACKET:
     case TCARET_OPEN_BRACKET:
+    case TOPEN_PAREN:
     case TQUESTION_MARK:
       return true;
     default: return false;
@@ -274,7 +276,7 @@ typedef struct u8_pair {
   u8 right;
 } u8_pair;
 
-u8_pair binary_op_binding_power(Token_Type type) {
+u8_pair infix_op_binding_power(Token_Type type) {
   switch(type) {
     case TEQUALS:
     case TPLUS_EQUALS:
@@ -303,6 +305,7 @@ u8_pair binary_op_binding_power(Token_Type type) {
     case TDOT_CARET:
     case TOPEN_BRACKET:
     case TCARET_OPEN_BRACKET:
+    case TOPEN_PAREN:
       return (u8_pair){49,50};
     default: assert(false && "(internal compiler error) binary op does not exist");
   }
@@ -415,7 +418,7 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
     Token op = peek_token(r);
 
     if(is_infix_operator(op)) {
-      u8_pair powers = binary_op_binding_power(op.type);
+      u8_pair powers = infix_op_binding_power(op.type);
       if(powers.left < min_power) {
         revert_state(r);
         break;
@@ -435,6 +438,8 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
           error_unexpected_token(next);
         lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
         lhs_needs_semicolon = true;
+      } else if(op.type == TOPEN_PAREN) {
+        lhs_ast = (Ast_Node *)parse_function_call(r, scope, lhs_ast, op, uses_bind_symbol);
       } else {
         Ast_Node *rhs_ast = parse_expression(r, scope, powers.right, NULL, uses_bind_symbol);
         lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
@@ -444,9 +449,6 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
 
     } else if(is_postfix_operator(op)) {
       lhs_ast = (Ast_Node *)unary_op_to_ast(op, lhs_ast, false);
-      lhs_needs_semicolon = true;
-    } else if(op.type == TOPEN_PAREN) {
-      lhs_ast = (Ast_Node *)parse_function_call(r, scope, lhs_ast, op, uses_bind_symbol);
       lhs_needs_semicolon = true;
     } else {
       revert_state(r);
@@ -507,6 +509,18 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
     Ast_Node *n = allocate_ast_node_type(NODE_NULL, sizeof(Ast_Node));
     n->loc = first.loc;
     return n;
+  } else if(first.type == TIMPORT) {
+    Ast_Import *n = (Ast_Import *)allocate_ast_node_type(NODE_IMPORT, sizeof(Ast_Import));
+    n->n.loc = first.loc;
+
+    {
+      Token t = peek_token(r);
+      if(t.type != TLITERAL_STRING)
+        error_unexpected_token(t);
+      n->filename = t.data.literal_string;
+    }
+
+    return (Ast_Node *)n;
   } else if(first.type == TRETURN) {
     Ast_Return *n = (Ast_Return *)allocate_ast_node_type(NODE_RETURN, sizeof(Ast_Return));
     n->n.loc = first.loc;
@@ -659,148 +673,6 @@ Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
   }
 }
 
-Ast *parse_file(Token_Reader *r) {
-  Ast *result = malloc(sizeof(Ast));
-  result->compilation_units = init_Compilation_Unit_Ptr_Array(32);
-  result->scope.type = UNIT_SCOPE;
-  result->scope.has_parent = false;
-  result->scope.entries = init_Scope_Entry_Array(2);
-
-  while(1) {
-    save_state(r);
-    Token next = peek_token(r);
-    revert_state(r);
-    if(next.type == TEOL)
-      return result;
-
-    Ast_Node *node = parse_any_statement(r, &result->scope, true);
-    Compilation_Unit *declaration_unit; // to be referred to in the corresponding Scope_Entry
-    if(node->type == NODE_FUNCTION_DEFINITION) {
-
-      Ast_Function_Definition *n = (Ast_Function_Definition *)node;
-      if(n->def_type == FN_POLYMORPHIC) {
-        Compilation_Unit *fn = allocate_null_compilation_unit();
-        fn->type = UNIT_POLY_FUNCTION;
-        fn->type_inferred = false;
-        fn->type_inference_seen = false;
-        fn->bytecode_generated = false;
-        fn->bytecode_generating = false;
-        fn->poisoned = false;
-        fn->node = node;
-        fn->scope = &result->scope;
-        fn->data.poly_function_def.instances = init_Compilation_Unit_Ptr_Table();
-        fn->data.poly_function_def.current_instance_id = 0;
-        Compilation_Unit_Ptr_Array_push(&result->compilation_units, fn);
-
-        declaration_unit = fn;
-      } else if(n->def_type == FN_SIMPLE) {
-        // A function is represented by a signature and body which must be
-        // type-checked separately. See more explanation in ast.h for Compilation_Unit.
-        Compilation_Unit *sig = allocate_null_compilation_unit();
-        Compilation_Unit *body = allocate_null_compilation_unit();
-
-        sig->type = UNIT_FUNCTION_SIGNATURE;
-        sig->type_inferred = false;
-        sig->type_inference_seen = false;
-        sig->bytecode_generated = false;
-        sig->bytecode_generating = false;
-        sig->poisoned = false;
-        sig->node = node;
-        sig->scope = &result->scope;
-        sig->data.signature.body = body;
-        Compilation_Unit_Ptr_Array_push(&result->compilation_units, sig);
-
-        body->type = UNIT_FUNCTION_BODY;
-        body->type_inferred = false;
-        body->type_inference_seen = false;
-        body->bytecode_generated = false;
-        body->bytecode_generating = false;
-        body->poisoned = false;
-        body->node = node;
-        body->scope = &result->scope;
-        body->data.body.signature = sig;
-        body->data.body.bytecode = allocate_bytecode_unit_type(BYTECODE_FUNCTION, sizeof(Bytecode_Function));
-
-        Compilation_Unit_Ptr_Array_push(&result->compilation_units, body);
-
-        declaration_unit = sig;
-      } else assert(false);
-    } else if(node->type == NODE_FOREIGN_DEFINITION) {
-      Compilation_Unit *sig = allocate_null_compilation_unit();
-      sig->type = UNIT_FOREIGN_FUNCTION;
-      sig->type_inferred = false;
-      sig->type_inference_seen = false;
-      sig->bytecode_generated = false;
-      sig->bytecode_generating = false;
-      sig->poisoned = false;
-      sig->node = node;
-      sig->scope = &result->scope;
-      sig->data.foreign.bytecode = allocate_bytecode_unit_type(BYTECODE_FOREIGN_FUNCTION, sizeof(Bytecode_Foreign_Function));
-      Compilation_Unit_Ptr_Array_push(&result->compilation_units, sig);
-
-      declaration_unit = sig;
-    } else if(node->type == NODE_STRUCT_DEFINITION) {
-      Ast_Struct_Definition *n = (Ast_Struct_Definition *)node;
-      Compilation_Unit *unit = allocate_null_compilation_unit();
-
-      unit->type = UNIT_STRUCT;
-      unit->type_inferred = false;
-      unit->type_inference_seen = false;
-      unit->bytecode_generated = false;
-      unit->bytecode_generating = false;
-      unit->poisoned = false;
-      unit->node = node;
-      unit->scope = &result->scope;
-      unit->data.struct_def.type = UNKNOWN_TYPE;
-      Compilation_Unit_Ptr_Array_push(&result->compilation_units, unit);
-
-      declaration_unit = unit;
-    } else if(node->type == NODE_POLY_STRUCT_DEFINITION) {
-      Ast_Poly_Struct_Definition *n = (Ast_Poly_Struct_Definition *)node;
-      Compilation_Unit *unit = allocate_null_compilation_unit();
-
-      unit->type = UNIT_POLY_STRUCT;
-      unit->type_inferred = false;
-      unit->type_inference_seen = false;
-      unit->bytecode_generated = false;
-      unit->bytecode_generating = false;
-      unit->poisoned = false;
-      unit->node = node;
-      unit->scope = &result->scope;
-      unit->data.poly_struct_def.instances = init_Type_Table();
-      Compilation_Unit_Ptr_Array_push(&result->compilation_units, unit);
-
-      declaration_unit = unit;
-    } else if(node->type == NODE_NULL) {
-      // do nothing
-    } else {
-      print_ast_node(node);
-      assert(false);
-    }
-
-    if(node->type == NODE_TYPED_DECL ||
-       node->type == NODE_TYPED_DECL_SET ||
-       node->type == NODE_UNTYPED_DECL_SET ||
-       node->type == NODE_FUNCTION_DEFINITION ||
-       node->type == NODE_STRUCT_DEFINITION ||
-       node->type == NODE_POLY_STRUCT_DEFINITION ||
-       node->type == NODE_FOREIGN_DEFINITION) {
-      Scope_Entry e;
-      switch(node->type) {
-        case NODE_TYPED_DECL: e.symbol = ((Ast_Typed_Decl *)node)->symbol; break;
-        case NODE_TYPED_DECL_SET: e.symbol = ((Ast_Typed_Decl_Set *)node)->symbol; break;
-        case NODE_UNTYPED_DECL_SET: e.symbol = ((Ast_Untyped_Decl_Set *)node)->symbol; break;
-        case NODE_FUNCTION_DEFINITION: e.symbol = ((Ast_Function_Definition *)node)->symbol; break;
-        case NODE_STRUCT_DEFINITION: e.symbol = ((Ast_Struct_Definition *)node)->symbol; break;
-        case NODE_POLY_STRUCT_DEFINITION: e.symbol = ((Ast_Poly_Struct_Definition *)node)->symbol; break;
-        case NODE_FOREIGN_DEFINITION: e.symbol = ((Ast_Foreign_Definition *)node)->symbol; break;
-      }
-      e.data.unit.unit = declaration_unit;
-      Scope_Entry_Array_push(&result->scope.entries, e);
-    }
-  }
-}
-
 Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope) {
   Token first = peek_token(r);
   assert(first.type == TOPEN_BRACE && "(internal compiler error) block must begin with open brace");
@@ -903,6 +775,7 @@ Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location
   // parse directives
   n->is_inline = false;
   n->is_operator = false;
+  n->is_export = false;
   Token open_paren;
   while(true) {
     Token number_sign = peek_token(r);
@@ -924,6 +797,9 @@ Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location
     } else if(s == st_get_id_of("operator", -1)) {
       if(n->is_operator) parse_error("I found the '#operator' directive multiple times in this function definition.", sym.loc, true);
       n->is_operator = true;
+    } else if(s == st_get_id_of("export", -1)) {
+      if(n->is_export) parse_error("I found the '#export' directive multiple times in this function definition.", sym.loc, true);
+      n->is_export = true;
     } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
   }
 
@@ -962,13 +838,34 @@ Ast_Node *parse_function_definition(Token_Reader *r, symbol identifier, Location
 
 Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
 
-  Token after_struct = peek_token(r);
-  if(after_struct.type == TOPEN_BRACE) {
-    Token open_brace = after_struct;
+  Token open_brace;
+  bool is_export = false;
 
+  while(true) {
+    Token number_sign = peek_token(r);
+    if(number_sign.type == TOPEN_PAREN) {
+      open_brace = number_sign;
+      break;
+    } else if(number_sign.type != TNUMBER_SIGN)
+      error_unexpected_token(number_sign);
+
+    Token sym = peek_token(r);
+    if(sym.type != TSYMBOL)
+      error_unexpected_token(sym);
+
+    symbol s = sym.data.symbol;
+
+    if(s == st_get_id_of("export", -1)) {
+      if(is_export) parse_error("I found the '#export' directive multiple times in this struct definition.", sym.loc, true);
+      is_export = true;
+    } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
+  }
+
+  if(open_brace.type == TOPEN_BRACE) {
     Ast_Struct_Definition *n = (Ast_Struct_Definition *)allocate_ast_node_type(NODE_STRUCT_DEFINITION, sizeof(Ast_Struct_Definition));
     n->n.loc = loc;
     n->symbol = identifier;
+    n->is_export = is_export;
     n->type = UNKNOWN_TYPE;
     n->members = init_Compilation_Unit_Ptr_Array(2);
 
@@ -1002,10 +899,11 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
     }
 
     return (Ast_Node *)n;
-  } else if(after_struct.type == TOPEN_PAREN) {
+  } else if(open_brace.type == TOPEN_PAREN) {
     Ast_Poly_Struct_Definition *n = (Ast_Poly_Struct_Definition *)allocate_ast_node_type(NODE_POLY_STRUCT_DEFINITION, sizeof(Ast_Poly_Struct_Definition));
     n->n.loc = loc;
     n->symbol = identifier;
+    n->is_export = is_export;
     n->param_scope.type = BASIC_SCOPE;
     n->param_scope.has_parent = true;
     n->param_scope.parent = scope;
@@ -1047,19 +945,42 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
       Scope_Entry_Array_push(&n->member_scope.entries, e);
     }
     return (Ast_Node *)n;
-  } else error_unexpected_token(after_struct);
+  } else error_unexpected_token(open_brace);
 }
 
 Ast_Node *parse_foreign_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
   Token def_type = peek_token(r);
   if(def_type.type != TFN) error_unexpected_token(def_type);
 
-  Token open_paren = peek_token(r);
-  if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
-
   Ast_Foreign_Definition *n = (Ast_Foreign_Definition *)allocate_ast_node_type(NODE_FOREIGN_DEFINITION, sizeof(Ast_Foreign_Definition));
   n->n.loc = loc;
   n->symbol = identifier;
+
+  Token open_paren;
+  n->is_export = false;
+
+  while(true) {
+    Token number_sign = peek_token(r);
+    if(number_sign.type == TOPEN_PAREN) {
+      open_paren = number_sign;
+      break;
+    } else if(number_sign.type != TNUMBER_SIGN)
+      error_unexpected_token(number_sign);
+
+    Token sym = peek_token(r);
+    if(sym.type != TSYMBOL)
+      error_unexpected_token(sym);
+
+    symbol s = sym.data.symbol;
+
+    if(s == st_get_id_of("export", -1)) {
+      if(n->is_export) parse_error("I found the '#export' directive multiple times in this function definition.", sym.loc, true);
+      n->is_export = true;
+    } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
+  }
+
+  if(open_paren.type != TOPEN_PAREN) error_unexpected_token(open_paren);
+
   n->parameters = init_Ast_Node_Ptr_Array(2);
   n->parameter_types = init_Type_Array(2);
   while(true) {
@@ -1100,4 +1021,183 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
   } else if(def_type.type == TFOREIGN) {
     return parse_foreign_definition(r, identifier.data.symbol, double_colon.loc, scope);
   } else parse_error("I expected 'struct' or 'fn'.", def_type.loc, true);
+}
+
+
+
+
+Compilation_Unit *parse_file(int file_id) {
+  assert(files.length > file_id);
+  File_Data *file_data = files.data + file_id;
+  if(file_data->parsed) return file_data->module;
+  else file_data->module = allocate_null_compilation_unit();
+
+  Compilation_Unit *result = file_data->module;
+  result->type = UNIT_MODULE;
+  result->type_inferred = false;
+  result->type_inference_seen = false;
+  result->bytecode_generated = false;
+  result->bytecode_generating = false;
+  result->poisoned = false;
+  result->data.module.file_id = file_id;
+  result->data.module.compilation_units = init_Compilation_Unit_Ptr_Array(32);
+  result->data.module.scope.type = UNIT_SCOPE;
+  result->data.module.scope.has_parent = false;
+  result->data.module.scope.entries = init_Scope_Entry_Array(2);
+
+  file_data->tokens = lex_string(file_data->contents, 0);
+  Token_Reader r = (Token_Reader){file_data->tokens, 0, 0};
+
+  while(1) {
+    save_state(&r);
+    Token next = peek_token(&r);
+    revert_state(&r);
+    if(next.type == TEOL) {
+      file_data->parsed = true;
+      return result;
+    }
+
+    Ast_Node *node = parse_any_statement(&r, &result->data.module.scope, true);
+    Compilation_Unit *declaration_unit; // to be referred to in the corresponding Scope_Entry
+    if(node->type == NODE_FUNCTION_DEFINITION) {
+
+      Ast_Function_Definition *n = (Ast_Function_Definition *)node;
+      if(n->def_type == FN_POLYMORPHIC) {
+        Compilation_Unit *fn = allocate_null_compilation_unit();
+        fn->type = UNIT_POLY_FUNCTION;
+        fn->type_inferred = false;
+        fn->type_inference_seen = false;
+        fn->bytecode_generated = false;
+        fn->bytecode_generating = false;
+        fn->poisoned = false;
+        fn->node = node;
+        fn->scope = &result->data.module.scope;
+        fn->data.poly_function_def.instances = init_Compilation_Unit_Ptr_Table();
+        fn->data.poly_function_def.current_instance_id = 0;
+        Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, fn);
+
+        declaration_unit = fn;
+      } else if(n->def_type == FN_SIMPLE) {
+        // A function is represented by a signature and body which must be
+        // type-checked separately. See more explanation in ast.h for Compilation_Unit.
+        Compilation_Unit *sig = allocate_null_compilation_unit();
+        Compilation_Unit *body = allocate_null_compilation_unit();
+
+        sig->type = UNIT_FUNCTION_SIGNATURE;
+        sig->type_inferred = false;
+        sig->type_inference_seen = false;
+        sig->bytecode_generated = false;
+        sig->bytecode_generating = false;
+        sig->poisoned = false;
+        sig->node = node;
+        sig->scope = &result->data.module.scope;
+        sig->data.signature.body = body;
+        Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, sig);
+
+        body->type = UNIT_FUNCTION_BODY;
+        body->type_inferred = false;
+        body->type_inference_seen = false;
+        body->bytecode_generated = false;
+        body->bytecode_generating = false;
+        body->poisoned = false;
+        body->node = node;
+        body->scope = &result->data.module.scope;
+        body->data.body.signature = sig;
+        body->data.body.bytecode = allocate_bytecode_unit_type(BYTECODE_FUNCTION, sizeof(Bytecode_Function));
+
+        Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, body);
+
+        declaration_unit = sig;
+      } else assert(false);
+    } else if(node->type == NODE_FOREIGN_DEFINITION) {
+      Compilation_Unit *sig = allocate_null_compilation_unit();
+      sig->type = UNIT_FOREIGN_FUNCTION;
+      sig->type_inferred = false;
+      sig->type_inference_seen = false;
+      sig->bytecode_generated = false;
+      sig->bytecode_generating = false;
+      sig->poisoned = false;
+      sig->node = node;
+      sig->scope = &result->data.module.scope;
+      sig->data.foreign.bytecode = allocate_bytecode_unit_type(BYTECODE_FOREIGN_FUNCTION, sizeof(Bytecode_Foreign_Function));
+      Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, sig);
+
+      declaration_unit = sig;
+    } else if(node->type == NODE_STRUCT_DEFINITION) {
+      Ast_Struct_Definition *n = (Ast_Struct_Definition *)node;
+      Compilation_Unit *unit = allocate_null_compilation_unit();
+
+      unit->type = UNIT_STRUCT;
+      unit->type_inferred = false;
+      unit->type_inference_seen = false;
+      unit->bytecode_generated = false;
+      unit->bytecode_generating = false;
+      unit->poisoned = false;
+      unit->node = node;
+      unit->scope = &result->data.module.scope;
+      unit->data.struct_def.type = UNKNOWN_TYPE;
+      Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
+
+      declaration_unit = unit;
+    } else if(node->type == NODE_POLY_STRUCT_DEFINITION) {
+      Ast_Poly_Struct_Definition *n = (Ast_Poly_Struct_Definition *)node;
+      Compilation_Unit *unit = allocate_null_compilation_unit();
+
+      unit->type = UNIT_POLY_STRUCT;
+      unit->type_inferred = false;
+      unit->type_inference_seen = false;
+      unit->bytecode_generated = false;
+      unit->bytecode_generating = false;
+      unit->poisoned = false;
+      unit->node = node;
+      unit->scope = &result->data.module.scope;
+      unit->data.poly_struct_def.instances = init_Type_Table();
+      Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
+
+      declaration_unit = unit;
+    } else if(node->type == NODE_IMPORT) {
+      Ast_Import *n = (Ast_Import *)node;
+      Compilation_Unit *unit = allocate_null_compilation_unit();
+
+      unit->type = UNIT_IMPORT;
+      unit->type_inferred = false;
+      unit->type_inference_seen = false;
+      unit->bytecode_generated = false;
+      unit->bytecode_generating = false;
+      unit->poisoned = false;
+      unit->node = node;
+      unit->scope = &result->data.module.scope;
+      Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
+
+      declaration_unit = unit;
+    } else if(node->type == NODE_NULL) {
+      // do nothing
+    } else {
+      print_ast_node(node);
+      assert(false);
+    }
+
+    if(node->type == NODE_TYPED_DECL ||
+       node->type == NODE_TYPED_DECL_SET ||
+       node->type == NODE_UNTYPED_DECL_SET ||
+       node->type == NODE_FUNCTION_DEFINITION ||
+       node->type == NODE_STRUCT_DEFINITION ||
+       node->type == NODE_POLY_STRUCT_DEFINITION ||
+       node->type == NODE_FOREIGN_DEFINITION ||
+       node->type == NODE_IMPORT) {
+      Scope_Entry e;
+      switch(node->type) {
+        case NODE_TYPED_DECL: e.symbol = ((Ast_Typed_Decl *)node)->symbol; break;
+        case NODE_TYPED_DECL_SET: e.symbol = ((Ast_Typed_Decl_Set *)node)->symbol; break;
+        case NODE_UNTYPED_DECL_SET: e.symbol = ((Ast_Untyped_Decl_Set *)node)->symbol; break;
+        case NODE_FUNCTION_DEFINITION: e.symbol = ((Ast_Function_Definition *)node)->symbol; break;
+        case NODE_STRUCT_DEFINITION: e.symbol = ((Ast_Struct_Definition *)node)->symbol; break;
+        case NODE_POLY_STRUCT_DEFINITION: e.symbol = ((Ast_Poly_Struct_Definition *)node)->symbol; break;
+        case NODE_FOREIGN_DEFINITION: e.symbol = ((Ast_Foreign_Definition *)node)->symbol; break;
+        case NODE_IMPORT: e.symbol = st_get_id_of("*", -1); break;
+      }
+      e.data.unit.unit = declaration_unit;
+      Scope_Entry_Array_push(&result->data.module.scope.entries, e);
+    }
+  }
 }

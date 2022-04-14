@@ -33,6 +33,7 @@ typedef enum Ast_Node_Type {
   NODE_FOREIGN_DEFINITION,
   NODE_STRUCT_DEFINITION,
   NODE_POLY_STRUCT_DEFINITION,
+  NODE_IMPORT,
   NODE_RETURN
 } Ast_Node_Type;
 
@@ -59,6 +60,50 @@ Ast_Node NULL_AST_NODE;
 
 GENERATE_DARRAY_HEADER(Ast_Node *, Ast_Node_Ptr_Array);
 
+typedef struct Compilation_Unit Compilation_Unit;
+
+typedef struct Scope_Entry {
+  symbol symbol;
+  union { // Determined based on the parent Scope object's type property
+    struct {
+      Type type;
+    } basic;
+    struct {
+      Type type;
+      u32 register_id;
+    } reg;
+    struct {
+      Compilation_Unit *unit;
+    } unit;
+    struct {
+      Ast_Node *node;
+      u32 param_index;
+    } struct_;
+    struct {
+      Type value; // value of the parameter in this instance
+    } type;
+  } data;
+} Scope_Entry;
+
+GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
+
+typedef enum Scope_Type {
+  SYMBOL_SCOPE, // only stores symbols
+  BASIC_SCOPE, // only stores type information, without any associated register information.
+  REGISTER_SCOPE, // things stored in registers
+  UNIT_SCOPE, // compilation unit scope
+  STRUCT_SCOPE, // stores struct members
+  TYPE_SCOPE // stores types
+} Scope_Type;
+
+typedef struct Scope {
+  Scope_Type type;
+  bool has_parent;
+  Scope *parent;
+  Scope_Entry_Array entries;
+} Scope;
+
+
 typedef struct Bytecode_Unit Bytecode_Unit;
 
 typedef enum Compilation_Unit_Type {
@@ -71,7 +116,10 @@ typedef enum Compilation_Unit_Type {
   UNIT_STRUCT_MEMBER, // represents both struct members and poly instance members.
   UNIT_POLY_STRUCT,
   UNIT_POLY_FUNCTION,
-  UNIT_FOREIGN_FUNCTION
+  UNIT_FOREIGN_FUNCTION,
+  UNIT_IMPORT,
+
+  UNIT_MODULE
 } Compilation_Unit_Type;
 
 typedef struct Compilation_Unit Compilation_Unit;
@@ -121,55 +169,18 @@ typedef struct Compilation_Unit {
       u32 current_instance_id; // starts at 0, is incremented by one each time an instance is assigned an ID during bytecode generation.
       Compilation_Unit_Ptr_Table instances; // hashed by the types of the bound type arguments
     } poly_function_def;
+
+    struct {
+      Compilation_Unit *module;
+    } import;
+
+    struct {
+      int file_id;
+      Compilation_Unit_Ptr_Array compilation_units;
+      Scope scope;
+    } module;
   } data;
 } Compilation_Unit;
-
-typedef struct Scope_Entry {
-  symbol symbol;
-  union { // Determined based on the parent Scope object's type property
-    struct {
-      Type type;
-    } basic;
-    struct {
-      Type type;
-      u32 register_id;
-    } reg;
-    struct {
-      Compilation_Unit *unit;
-    } unit;
-    struct {
-      Ast_Node *node;
-      u32 param_index;
-    } struct_;
-    struct {
-      Type value; // value of the parameter in this instance
-    } type;
-  } data;
-} Scope_Entry;
-
-GENERATE_DARRAY_HEADER(Scope_Entry, Scope_Entry_Array);
-
-typedef enum Scope_Type {
-  SYMBOL_SCOPE, // only stores symbols
-  BASIC_SCOPE, // only stores type information, without any associated register information.
-  REGISTER_SCOPE, // things stored in registers
-  UNIT_SCOPE, // compilation unit scope
-  STRUCT_SCOPE, // stores struct members
-  TYPE_SCOPE // stores types
-} Scope_Type;
-
-typedef struct Scope {
-  Scope_Type type;
-  bool has_parent;
-  Scope *parent;
-  Scope_Entry_Array entries;
-} Scope;
-
-typedef struct Ast {
-  Compilation_Unit_Ptr_Array compilation_units;
-  Scope scope;
-} Ast;
-
 
 
 
@@ -343,6 +354,7 @@ typedef struct Ast_Function_Definition {
   Function_Definition_Type def_type;
   bool is_inline;
   bool is_operator;
+  bool is_export;
   Type return_type; // not relevant for FN_POLYMORPHIC
   Scope bound_type_scope;
   Scope parameter_scope; // subscope of bound_type_scope
@@ -352,6 +364,7 @@ typedef struct Ast_Function_Definition {
 typedef struct Ast_Foreign_Definition {
   Ast_Node n;
   symbol symbol;
+  bool is_export;
   Ast_Node_Ptr_Array parameters;
   Type_Array parameter_types;
   Ast_Node *return_type_node;
@@ -361,6 +374,7 @@ typedef struct Ast_Foreign_Definition {
 typedef struct Ast_Struct_Definition {
   Ast_Node n;
   symbol symbol;
+  bool is_export;
   Type type;
   Compilation_Unit_Ptr_Array members;
 } Ast_Struct_Definition;
@@ -368,11 +382,17 @@ typedef struct Ast_Struct_Definition {
 typedef struct Ast_Poly_Struct_Definition {
   Ast_Node n;
   symbol symbol;
+  bool is_export;
   Ast_Node_Ptr_Array parameters;
   Scope param_scope;
   Scope member_scope;
   Ast_Node_Ptr_Array members;
 } Ast_Poly_Struct_Definition;
+
+typedef struct Ast_Import {
+  Ast_Node n;
+  char *filename;
+} Ast_Import;
 
 typedef struct Ast_Return {
   Ast_Node n;
@@ -386,7 +406,6 @@ Compilation_Unit *allocate_null_compilation_unit();
 Compilation_Unit *allocate_compilation_unit(Compilation_Unit unit);
 
 void print_symbol(symbol symbol);
-void print_ast(Ast ast);
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes);
 void print_ast_node(Ast_Node *node);
 void print_scope(Scope scope, bool print_entries);

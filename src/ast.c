@@ -43,13 +43,6 @@ void print_symbol(symbol symbol) {
   printf("%s", str);
 }
 
-void print_ast(Ast ast) {
-  for(int i = 0; i < ast.compilation_units.length; i++) {
-    print_compilation_unit(ast.compilation_units.data[i]);
-    printf("\n\n");
-  }
-}
-
 void print_ast_statement_array(Ast_Node_Ptr_Array nodes) {
   for(int i = 0; i < nodes.length; i++) {
     Ast_Node *node = nodes.data[i];
@@ -293,6 +286,12 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_IMPORT: {
+      Ast_Import *n = (Ast_Import *)node;
+      printf("import \"%s\"", n->filename);
+      break;
+    }
+
     case NODE_BLOCK: {
       Ast_Block *n = (Ast_Block *)node;
       printf("{\n");
@@ -392,6 +391,19 @@ void print_compilation_unit(Compilation_Unit *unit) {
       printf("Foreign function:\n");
       print_ast_node(unit->node);
       printf("\n");
+      break;
+    }
+    case UNIT_IMPORT: {
+      printf("Import:\n");
+      print_ast_node(unit->node);
+      printf("\n");
+    }
+    case UNIT_MODULE: {
+      printf("Module (%i):\n", unit->data.module.file_id);
+      for(int i = 0; i < unit->data.module.compilation_units.length; i++) {
+        print_compilation_unit(unit->data.module.compilation_units.data[i]);
+        printf("\n\n");
+      }
       break;
     }
     default: {

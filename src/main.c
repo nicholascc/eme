@@ -38,29 +38,25 @@ int main(int argc, char *argv[]) {
   init_file_array();
   bytecode_units = init_Bytecode_Unit_Ptr_Array(2);
 
-  char *contents = add_file(source_file);
+  int main_file_id = add_file(source_file);
 
-  Ast *ast;
-  {
-    Token_Array tokens = lex_string(contents, 0);
-    Token_Reader reader = (Token_Reader){tokens, 0, 0};
-    ast = parse_file(&reader);
-    free(tokens.data);
-  }
+  Compilation_Unit *main_module = parse_file(main_file_id);
+  assert(main_module->type == UNIT_MODULE);
+
   if(should_exit_after_parsing) {
     printf("An error occurred during parsing, exiting.\n");
     exit(1);
   }
 
   //printf("\n\nParsed result:\n\n");
-  //print_ast(*ast);
+  // print_compilation_unit(main_module);
 
   bool compilation_has_errors = false;
 
   Bytecode_Unit *main;
   bool main_found = false;
-  for(int i = 0; i < ast->scope.entries.length; i++) {
-    Scope_Entry entry = ast->scope.entries.data[i];
+  for(int i = 0; i < main_module->data.module.scope.entries.length; i++) {
+    Scope_Entry entry = main_module->data.module.scope.entries.data[i];
     Compilation_Unit *unit = entry.data.unit.unit;
     if(unit->type == UNIT_FUNCTION_SIGNATURE) {
       Compilation_Unit *body = unit->data.signature.body;

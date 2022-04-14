@@ -86,6 +86,7 @@ void print_token(Token t) {
     case TFN:      printf("fn"); break;
     case TSTRUCT:  printf("struct"); break;
     case TFOREIGN: printf("foreign"); break;
+    case TIMPORT:  printf("import"); break;
     case TRETURN:  printf("return"); break;
     case TIF:      printf("if"); break;
     case TELSE:    printf("else"); break;
@@ -262,6 +263,8 @@ Token_Array lex_string(char *to_lex, int file_id) {
         t.type = TSTRUCT;
       } else if(len == 7 && 0 == memcmp(symbol_str, "foreign", 7)) {
         t.type = TFOREIGN;
+      } else if(len == 6 && 0 == memcmp(symbol_str, "import", 6)) {
+        t.type = TIMPORT;
       } else if(len == 5 && 0 == memcmp(symbol_str, "while", 5)) {
         t.type = TWHILE;
       } else if(len == 4 && 0 == memcmp(symbol_str, "each", 4)) {
@@ -317,7 +320,7 @@ Token_Array lex_string(char *to_lex, int file_id) {
         loc.character++;
         i += 1;
       }
-      result_str[i-1] = 0;
+      result_str[len-1] = 0;
 
       t.data.literal_string = result_str;
       Token_Array_push(&tokens, t);
