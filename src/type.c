@@ -53,6 +53,7 @@ u32 size_of_type(Type t) {
       case TYPE_INT:
       case TYPE_UNKNOWN_INT:
       case TYPE_BOOL:
+      case TYPE_UNKNOWN_STRING:
       case TYPE_UNKNOWN:
       case TYPE_POISON:
       default: assert(false);

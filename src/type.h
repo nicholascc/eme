@@ -20,6 +20,7 @@ typedef enum Type_Type {
   TYPE_INT,
   TYPE_UNKNOWN_INT,
   TYPE_BOOL,
+  TYPE_UNKNOWN_STRING,
 
   TYPE_STRUCT,
   TYPE_POLY_INSTANCE,
@@ -82,7 +83,6 @@ typedef struct Type_Info {
 
 Type UNKNOWN_TYPE;
 Type NOTHING_TYPE;
-Type UNKNOWN_INT_TYPE;
 Type POISON_TYPE;
 Type BOOL_TYPE;
 Type INT_TYPE;

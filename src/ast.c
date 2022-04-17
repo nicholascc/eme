@@ -68,6 +68,12 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_LITERAL_STRING: {
+      Ast_Literal_String *n = (Ast_Literal_String *)node;
+      printf("\"%s\"", n->string);
+      break;
+    }
+
     case NODE_BINARY_OP: {
       Ast_Binary_Op *n = (Ast_Binary_Op *)node;
       printf("(");
@@ -397,6 +403,7 @@ void print_compilation_unit(Compilation_Unit *unit) {
       printf("Import:\n");
       print_ast_node(unit->node);
       printf("\n");
+      break;
     }
     case UNIT_MODULE: {
       printf("Module (%i):\n", unit->data.module.file_id);
@@ -477,7 +484,8 @@ Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
     case NODE_EACH: {
       Ast_Each *r = (Ast_Each *)allocate_ast_node(node, sizeof(Ast_Each));
       r->collection = copy_ast_node(r->collection, scope);
-      r->body = copy_ast_node(r->body, scope);
+      r->scope = copy_scope(r->scope, scope);
+      r->body = copy_ast_node(r->body, &r->scope);
       return (Ast_Node *)r;
     }
     case NODE_FUNCTION_CALL: {
@@ -495,7 +503,7 @@ Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
     case NODE_BLOCK: {
       Ast_Block *r = (Ast_Block *)allocate_ast_node(node, sizeof(Ast_Block));
       r->scope = copy_scope(r->scope, scope);
-      r->statements = copy_ast_node_ptr_array(r->statements, scope);
+      r->statements = copy_ast_node_ptr_array(r->statements, &r->scope);
       return (Ast_Node *)r;
     }
 

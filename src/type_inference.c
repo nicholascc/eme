@@ -9,70 +9,6 @@
 #include "files.h"
 
 
-// Used to call try_function_call
-typedef enum Argument_Type {
-  ARGUMENT_NON_TYPE,
-  ARGUMENT_TYPE
-} Argument_Type;
-
-typedef struct Argument {
-  Argument_Type type;
-  union {
-    Type non_type; // TYPE of passed
-    Type type; // VALUE matching
-  } data;
-} Argument;
-
-// return_type is set if the function returns true.
-bool try_function_call(Argument *arguments, int argument_count, bool is_operator, bool is_export, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
-
-bool call_exported_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
-  assert(unit->type == UNIT_IMPORT);
-  type_infer_compilation_unit(unit);
-
-  Compilation_Unit *module = unit->data.import.module;
-  assert(module->type == UNIT_MODULE);
-  assert(module->data.module.scope.type == UNIT_SCOPE);
-
-  for(int i = 0; i < module->data.module.scope.entries.length; i++) {
-    Scope_Entry e = module->data.module.scope.entries.data[i];
-    Compilation_Unit *u = e.data.unit.unit;
-    if(e.symbol == identifier) {
-      bool matches = try_function_call(arguments, argument_count, is_operator, true, u, return_type, to_call, NULL);
-      if(matches)
-        return true;
-    }
-  }
-  return false;
-}
-
-// doesn't free arguments
-bool call_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Type *return_type, Compilation_Unit **body, Scope *scope) {
-  while(true) {
-    for(int i = 0; i < scope->entries.length; i++) {
-      Scope_Entry e = scope->entries.data[i];
-      Compilation_Unit *u = e.data.unit.unit;
-      if(scope->type == UNIT_SCOPE) {
-        if(e.symbol == identifier) {
-          bool matches = try_function_call(arguments, argument_count, is_operator, false, u, return_type, body, NULL);
-          if(matches)
-            return true;
-        } else if(e.symbol == st_get_id_of("*",-1)) {
-          bool matches = call_exported_function(identifier, arguments, argument_count, is_operator, u, return_type, body, NULL);
-          if(matches)
-            return true;
-        }
-      }
-    }
-
-    if(scope->has_parent)
-      scope = scope->parent;
-    else
-      break;
-  }
-  return false;
-}
-
 
 void type_inference_error(char *message, Location l, bool *unit_poisoned) {
   print_error_message(message, l);
@@ -158,6 +94,91 @@ Type solidify_type(Type x) {
 
 
 
+
+
+// Used to call try_function_call
+typedef enum Argument_Type {
+  ARGUMENT_NON_TYPE,
+  ARGUMENT_TYPE
+} Argument_Type;
+
+typedef struct Argument {
+  Argument_Type type;
+  union {
+    Type non_type; // TYPE of passed
+    Type type; // VALUE matching
+  } data;
+} Argument;
+
+// return_type is set if the function returns true.
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, bool is_export, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
+
+bool call_exported_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
+  assert(unit->type == UNIT_IMPORT);
+  type_infer_compilation_unit(unit);
+
+  Compilation_Unit *module = unit->data.import.module;
+  assert(module->type == UNIT_MODULE);
+  assert(module->data.module.scope.type == UNIT_SCOPE);
+
+  for(int i = 0; i < module->data.module.scope.entries.length; i++) {
+    Scope_Entry e = module->data.module.scope.entries.data[i];
+    Compilation_Unit *u = e.data.unit.unit;
+    if(e.symbol == identifier) {
+      bool matches = try_function_call(arguments, argument_count, is_operator, true, u, return_type, to_call, NULL);
+      if(matches)
+        return true;
+    }
+  }
+  return false;
+}
+
+// doesn't free arguments
+bool call_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Type *return_type, Compilation_Unit **body, Scope *scope) {
+  while(true) {
+    for(int i = 0; i < scope->entries.length; i++) {
+      Scope_Entry e = scope->entries.data[i];
+      Compilation_Unit *u = e.data.unit.unit;
+      if(scope->type == UNIT_SCOPE) {
+        if(e.symbol == identifier) {
+          bool matches = try_function_call(arguments, argument_count, is_operator, false, u, return_type, body, NULL);
+          if(matches)
+            return true;
+        } else if(e.symbol == st_get_id_of("*",-1)) {
+          bool matches = call_exported_function(identifier, arguments, argument_count, is_operator, u, return_type, body, NULL);
+          if(matches)
+            return true;
+        }
+      }
+    }
+
+    if(scope->has_parent)
+      scope = scope->parent;
+    else
+      break;
+  }
+  return false;
+}
+
+// DO NOT HOLD THE RETURNED POINTER!
+Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Location error_location, Scope **found_scope) {
+  while(true) {
+    for(int i = 0; i < scope->entries.length; i++) {
+      Scope_Entry *e = &scope->entries.data[i];
+      if(e->symbol == symbol) {
+        *found_scope = scope;
+        return e;
+      }
+    }
+
+    if(scope->has_parent)
+      scope = scope->parent;
+    else
+      break;
+  }
+  print_error_message("This symbol is undefined in this scope.", error_location);
+  exit(1);
+}
 
 Type evaluate_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {
   switch(node->type) {
@@ -467,27 +488,6 @@ void infer_type_of_poly_struct_definition(Ast_Poly_Struct_Definition *def, Compi
   }
 }
 
-
-// DO NOT HOLD THE RETURNED POINTER!
-Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Location error_location, Scope **found_scope) {
-  while(true) {
-    for(int i = 0; i < scope->entries.length; i++) {
-      Scope_Entry *e = &scope->entries.data[i];
-      if(e->symbol == symbol) {
-        *found_scope = scope;
-        return e;
-      }
-    }
-
-    if(scope->has_parent)
-      scope = scope->parent;
-    else
-      break;
-  }
-  print_error_message("This symbol is undefined in this scope.", error_location);
-  exit(1);
-}
-
 Type get_type_of_identifier_in_scope(symbol symbol, Scope *scope, Location error_location, bool *unit_poisoned) {
   Scope *found_scope;
   Scope_Entry *e = get_entry_of_identifier_in_scope(symbol, scope, error_location, &found_scope);
@@ -633,7 +633,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
       }
     }
     *return_type = def->return_type;
-    *to_call = unit;
+    *to_call = unit->data.signature.body;
     return true;
   } else if(unit->node->type == NODE_FOREIGN_DEFINITION) {
     type_infer_compilation_unit(unit);
@@ -785,6 +785,26 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
   switch(node->type) {
     case NODE_LITERAL:
       return ((Ast_Literal*)node)->type;
+    case NODE_LITERAL_STRING: {
+      Ast_Literal_String *n = (Ast_Literal_String *)node;
+
+      Argument *arguments = malloc(2*sizeof(Argument));
+      arguments[0].type = ARGUMENT_NON_TYPE;
+      arguments[0].data.non_type = integer_type_with(false, 8);
+      arguments[0].data.non_type.reference_count++;
+
+      arguments[1].type = ARGUMENT_NON_TYPE;
+      arguments[1].data.non_type = INT_TYPE;
+
+      if(call_function(st_get_id_of("make_string_literal",-1), arguments, 2, true, &n->return_type, &n->make_body, scope)) {
+        free(arguments);
+        return n->return_type;
+      } else {
+        free(arguments);
+        type_inference_error("I cannot find a function which implements the subscript operator with these argument types.", node->loc, unit_poisoned);
+        return POISON_TYPE;
+      }
+    }
     case NODE_UNARY_OP: {
       Ast_Unary_Op *n = (Ast_Unary_Op *)node;
       switch(n->operator) {
@@ -1120,7 +1140,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           } else {
             Argument a;
             a.type = ARGUMENT_NON_TYPE;
-            a.data.non_type = solidify_type(passed);
+            a.data.non_type = passed;
             arguments[i] = a;
           }
         }

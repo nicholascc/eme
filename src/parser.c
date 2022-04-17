@@ -92,6 +92,14 @@ Ast_Literal *literal_bool_to_ast(Token t) {
   return n;
 }
 
+Ast_Literal_String *literal_string_to_ast(Token t) {
+  Ast_Literal_String *n = (Ast_Literal_String *)allocate_ast_node_type(NODE_LITERAL_STRING, sizeof(Ast_Literal_String));
+  n->n.loc = t.loc;
+  n->string = t.data.literal_string;
+  n->length = strlen(n->string);
+  return n;
+}
+
 
 typedef struct Symbol_Integer_Pair {
   const char *str;
@@ -338,6 +346,10 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
 
   } else if(lhs.type == TLITERAL_BOOL) {
     lhs_ast = (Ast_Node *)literal_bool_to_ast(lhs);
+    lhs_needs_semicolon = true;
+
+  } else if(lhs.type == TLITERAL_STRING) {
+    lhs_ast = (Ast_Node *)literal_string_to_ast(lhs);
     lhs_needs_semicolon = true;
 
   } else if(lhs.type == TSYMBOL) {

@@ -137,10 +137,17 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         break;
       }
       case BC_SET_LITERAL: {
-        u32 reg_a = inst.data.set.reg_a;
+        u32 reg_a = inst.data.set_literal.reg_a;
         u32 a_size = size_of_type(fn.register_types.data[reg_a]);
         assert(a_size <= 8);
         memcpy(&local[r_to_id[reg_a]], &inst.data.set_literal.lit_b, a_size);
+        break;
+      }
+      case BC_SET_PTR_LITERAL: {
+        u32 reg_a = inst.data.set_ptr_literal.reg_a;
+        u32 a_size = size_of_type(fn.register_types.data[reg_a]);
+        assert(a_size <= 8);
+        memcpy(&local[r_to_id[reg_a]], &inst.data.set_ptr_literal.ptr, a_size);
         break;
       }
       case BC_BIT_CAST: {
@@ -308,6 +315,10 @@ u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params) {
         u64 param;
         memcpy(&param, params[0], sizeof(u64));
         free((u8 *)param);
+      } else if(fn->u.name == st_get_id_of("putchar", -1)) {
+        u8 param;
+        memcpy(&param, params[0], sizeof(u8));
+        printf("%c", param);
       } else {
         printf("The interpreted code tried to call an undefined foreign function: '%s'.\n", st_get_str_of(fn->u.name));
         exit(1);

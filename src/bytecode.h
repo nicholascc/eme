@@ -19,6 +19,7 @@ typedef enum Bytecode_Instruction_Type {
 
   BC_SET,
   BC_SET_LITERAL,
+  BC_SET_PTR_LITERAL,
 
   BC_BIT_CAST,
 
@@ -51,6 +52,12 @@ typedef struct Bytecode_Instruction {
       u32 reg_a;
       s64 lit_b;
     } set_literal;
+
+    struct {
+      u32 reg_a;
+      u8 *ptr;
+      s64 length; // length in BYTES, not amount of things
+    } set_ptr_literal;
 
     struct {
       u32 reg_a;

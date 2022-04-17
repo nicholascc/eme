@@ -12,6 +12,7 @@
 typedef enum Ast_Node_Type {
   NODE_NULL,
   NODE_LITERAL,
+  NODE_LITERAL_STRING,
   NODE_BINARY_OP,
   NODE_UNARY_OP,
   NODE_IF,
@@ -190,6 +191,14 @@ typedef struct Ast_Literal {
   Type type;
   s64 value;
 } Ast_Literal;
+
+typedef struct Ast_Literal_String {
+  Ast_Node n;
+  Compilation_Unit *make_body;
+  Type return_type;
+  char *string;
+  int length;
+} Ast_Literal_String;
 
 typedef enum Ast_Binary_Op_Type {
   OPPLUS,

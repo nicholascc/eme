@@ -69,6 +69,10 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       printf("set r%i <- %lli\n", inst.data.set_literal.reg_a, inst.data.set_literal.lit_b);
       break;
     }
+    case BC_SET_PTR_LITERAL: {
+      printf("set r%i <- %lli bytes ptr\n", inst.data.set_ptr_literal.reg_a, inst.data.set_ptr_literal.length);
+      return;
+    }
     case BC_SET: {
       printf("set r%i <- r%i\n", inst.data.set.reg_a, inst.data.set.reg_b);
       break;
@@ -234,13 +238,23 @@ u32 add_bin_op_instruction(Bytecode_Block *block, Bytecode_Instruction_Type t, u
   return a;
 }
 
-u32 add_set_literal_instruction(Bytecode_Function *fn, u32 *block, int value, Type type, Ast_Node *node) {
+u32 add_set_literal_instruction(Bytecode_Function *fn, u32 *block, int value, Type type) {
   Bytecode_Instruction inst;
   inst.type = BC_SET_LITERAL;
   inst.data.set_literal.lit_b = value;
   inst.data.set_literal.reg_a = add_register(fn, solidify_type(type));
   add_instruction(&fn->blocks.data[*block], inst);
   return inst.data.set_literal.reg_a;
+}
+
+u32 add_set_ptr_literal_instruction(Bytecode_Function *fn, u32 *block, u8 *ptr, s64 length, Type type) {
+  Bytecode_Instruction inst;
+  inst.type = BC_SET_PTR_LITERAL;
+  inst.data.set_ptr_literal.reg_a = add_register(fn, solidify_type(type));
+  inst.data.set_ptr_literal.ptr = ptr;
+  inst.data.set_ptr_literal.length = length;
+  add_instruction(&fn->blocks.data[*block], inst);
+  return inst.data.set_ptr_literal.reg_a;
 }
 
 void add_arg(Bytecode_Function *fn, u32 block, u32 reg) {
@@ -250,7 +264,7 @@ void add_arg(Bytecode_Function *fn, u32 block, u32 reg) {
   add_instruction(&fn->blocks.data[block], inst);
 }
 
-u32 add_call(Bytecode_Function *fn, u32 block, Compilation_Unit *body, Type return_type, u32 result_reg) {
+void add_call(Bytecode_Function *fn, u32 block, Compilation_Unit *body, Type return_type, u32 result_reg) {
 
   Bytecode_Instruction inst;
   inst.type = BC_CALL;
@@ -388,8 +402,18 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
   switch(node->type) {
     case NODE_LITERAL: {
       Ast_Literal *n = (Ast_Literal *)node;
-      Bytecode_Instruction inst;
-      return add_set_literal_instruction(fn, block, n->value, n->type, node);
+      return add_set_literal_instruction(fn, block, n->value, n->type);
+    }
+    case NODE_LITERAL_STRING: {
+      Ast_Literal_String *n = (Ast_Literal_String *)node;
+      Type ptr_type = integer_type_with(false, 8);
+      ptr_type.reference_count++;
+      u32 ptr_reg = add_set_ptr_literal_instruction(fn, block, n->string, n->length, ptr_type);
+      u32 length_reg = add_set_literal_instruction(fn, block, n->length, INT_TYPE);
+      u32 result_reg = add_call_new_reg(fn, *block, n->make_body, n->return_type);
+      add_arg(fn, *block, ptr_reg);
+      add_arg(fn, *block, length_reg);
+      return result_reg;
     }
     case NODE_BINARY_OP: {
       Ast_Binary_Op *n = (Ast_Binary_Op *)node;
@@ -815,7 +839,7 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           Type size_type = n->return_type;
           assert(size_type.info->type == TYPE_UNKNOWN_INT);
           s64 size = size_type.info->data.unknown_int;
-          return add_set_literal_instruction(fn, block, size, size_type, node);
+          return add_set_literal_instruction(fn, block, size, size_type);
         } else if(symbol == st_get_id_of("bit_cast", -1)) {
           assert(n->arguments.length == 2);
           u32 from_reg = generate_bytecode_expr(n->arguments.data[1], block, fn, scope);

@@ -231,6 +231,28 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           break;
         }
 
+        case BC_SET_PTR_LITERAL: {
+          Type ptr_type = fn.register_types.data[inst.data.set_ptr_literal.reg_a];
+          assert(ptr_type.reference_count > 0);
+          Type base_type = ptr_type;
+          base_type.reference_count--;
+
+          LLVMTypeRef llvm_global_type = LLVMArrayType(LLVMInt8Type(), inst.data.set_ptr_literal.length);
+          LLVMValueRef global = LLVMAddGlobal(mod, llvm_global_type, "");
+          LLVMSetInitializer(global, LLVMConstString(inst.data.set_ptr_literal.ptr, inst.data.set_ptr_literal.length, true));
+          LLVMSetGlobalConstant(global, true);
+          LLVMSetLinkage(global, LLVMPrivateLinkage);
+          LLVMSetUnnamedAddress(global, LLVMGlobalUnnamedAddr);
+          LLVMSetAlignment(global, size_of_type(base_type));
+
+          LLVMValueRef zero = LLVMConstInt(LLVMInt64Type(), 0, true);
+          LLVMValueRef indices[2] = {zero, zero};
+          LLVMValueRef gep = LLVMBuildGEP2(builder, llvm_global_type, global, indices, 2, "");
+          LLVMValueRef a = LLVMBuildBitCast(builder, gep, llvm_type_of(ptr_type), "");
+          LLVMBuildStore(builder, gep, r[inst.data.set_ptr_literal.reg_a]);
+          break;
+        }
+
         case BC_BIT_CAST: {
           Type a_type = fn.register_types.data[inst.data.bit_cast.reg_a];
           Type b_type = fn.register_types.data[inst.data.bit_cast.reg_b];
