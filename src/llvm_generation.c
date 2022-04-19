@@ -183,6 +183,29 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           break;
         }
 
+        case BC_OR:
+        case BC_AND: {
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
+          LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
+          {
+            Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
+            Type c_type = fn.register_types.data[inst.data.bin_op.reg_c];
+
+            b = generate_llvm_cast(builder, b, b_type, BOOL_TYPE);
+            c = generate_llvm_cast(builder, c, c_type, BOOL_TYPE);
+          }
+
+          LLVMValueRef a;
+          if(inst.type == BC_AND) {
+            a = LLVMBuildAnd(builder, b, c, "");
+          } else if(inst.type == BC_OR) {
+            a = LLVMBuildOr(builder, b, c, "");
+          } else assert(false);
+
+          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
+          break;
+        }
+
         case BC_EQUALS:
         case BC_LESS_THAN:
         case BC_LESS_THAN_EQUALS: {

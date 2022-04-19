@@ -801,7 +801,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         return n->return_type;
       } else {
         free(arguments);
-        type_inference_error("I cannot find a function which implements the subscript operator with these argument types.", node->loc, unit_poisoned);
+        type_inference_error("I cannot find a function which implements the make_string_literal operator with these argument types.", node->loc, unit_poisoned);
         return POISON_TYPE;
       }
     }
@@ -874,6 +874,21 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           error_cannot_implicitly_cast(second, first, node->loc, true, unit_poisoned);
           n->convert_to = POISON_TYPE;
           return POISON_TYPE;
+        }
+
+        case OPOR:
+        case OPAND: {
+          Type first = infer_type_of_expr(n->first, scope, unit, true, unit_poisoned);
+          Type second = infer_type_of_expr(n->second, scope, unit, true, unit_poisoned);
+          if(first.info->type == TYPE_POISON || second.info->type == TYPE_POISON) return POISON_TYPE;
+          if(!can_implicitly_cast_type(first, BOOL_TYPE)) {
+            error_cannot_implicitly_cast(first, BOOL_TYPE, node->loc, false, unit_poisoned);
+            return POISON_TYPE;
+          } else if(!can_implicitly_cast_type(second, BOOL_TYPE)) {
+            error_cannot_implicitly_cast(second, BOOL_TYPE, node->loc, false, unit_poisoned);
+            return POISON_TYPE;
+          }
+          return BOOL_TYPE;
         }
 
         case OPEQUALS: // this needs to be handled by its own code later.

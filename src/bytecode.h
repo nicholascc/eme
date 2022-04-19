@@ -13,6 +13,9 @@ typedef enum Bytecode_Instruction_Type {
   BC_MUL,
   BC_DIV,
 
+  BC_AND,
+  BC_OR,
+
   BC_EQUALS,
   BC_LESS_THAN,
   BC_LESS_THAN_EQUALS,

@@ -54,6 +54,14 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
       printf("div r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
     }
+    case BC_AND: {
+      printf("and r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
+    }
+    case BC_OR: {
+      printf("or r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
+    }
     case BC_EQUALS: {
       printf("eq r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
       break;
@@ -64,6 +72,7 @@ void print_bytecode_instruction(Bytecode_Instruction inst) {
     }
     case BC_LESS_THAN_EQUALS: {
       printf("less_than_equals r%i <- r%i r%i\n", inst.data.bin_op.reg_a, inst.data.bin_op.reg_b, inst.data.bin_op.reg_c);
+      break;
     }
     case BC_SET_LITERAL: {
       printf("set r%i <- %lli\n", inst.data.set_literal.reg_a, inst.data.set_literal.lit_b);
@@ -265,7 +274,7 @@ void add_arg(Bytecode_Function *fn, u32 block, u32 reg) {
 }
 
 void add_call(Bytecode_Function *fn, u32 block, Compilation_Unit *body, Type return_type, u32 result_reg) {
-
+  generate_bytecode_compilation_unit(body);
   Bytecode_Instruction inst;
   inst.type = BC_CALL;
   if(body->type == UNIT_FUNCTION_BODY)
@@ -431,6 +440,8 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
         MACRO_ADD_BINARY_BYTECODE(OPMINUS, BC_SUB, false, add_register(fn, n->convert_to))
         MACRO_ADD_BINARY_BYTECODE(OPMUL, BC_MUL, false, add_register(fn, n->convert_to))
         MACRO_ADD_BINARY_BYTECODE(OPDIV, BC_DIV, false, add_register(fn, n->convert_to))
+        MACRO_ADD_BINARY_BYTECODE(OPAND, BC_AND, false, add_register(fn, BOOL_TYPE))
+        MACRO_ADD_BINARY_BYTECODE(OPOR, BC_OR, false, add_register(fn, BOOL_TYPE))
         MACRO_ADD_BINARY_BYTECODE(OPEQUALS, BC_EQUALS, false, add_register(fn, BOOL_TYPE))
         MACRO_ADD_BINARY_BYTECODE(OPLESS_THAN, BC_LESS_THAN, false, add_register(fn, BOOL_TYPE))
         MACRO_ADD_BINARY_BYTECODE(OPGREATER_THAN, BC_LESS_THAN, true, add_register(fn, BOOL_TYPE))

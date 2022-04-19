@@ -44,6 +44,8 @@ bool is_infix_operator(Token t) {
     case TPLUS_EQUALS:
     case TMINUS_EQUALS:
     case TDOUBLE_EQUALS:
+    case TDOUBLE_AMPERSAND:
+    case TDOUBLE_OR:
     case TLESS_THAN:
     case TLESS_THAN_OR_EQUAL_TO:
     case TGREATER_THAN:
@@ -190,6 +192,8 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TPLUS_EQUALS: ast_op = OPPLUS_EQUALS; break;
     case TMINUS_EQUALS: ast_op = OPMINUS_EQUALS; break;
     case TDOUBLE_EQUALS: ast_op = OPEQUALS; break;
+    case TDOUBLE_AMPERSAND: ast_op = OPAND; break;
+    case TDOUBLE_OR: ast_op = OPOR; break;
     case TLESS_THAN: ast_op = OPLESS_THAN; break;
     case TLESS_THAN_OR_EQUAL_TO: ast_op = OPLESS_THAN_OR_EQUAL_TO; break;
     case TGREATER_THAN: ast_op = OPGREATER_THAN; break;
@@ -198,6 +202,7 @@ Ast_Binary_Op *binary_op_to_ast(Ast_Node *first, Token op, Ast_Node *second) {
     case TDOT_CARET: ast_op = OPSTRUCT_MEMBER_REF; break;
     case TCARET_OPEN_BRACKET: ast_op = OPSUBSCRIPT_REF; break;
     case TOPEN_BRACKET: ast_op = OPSUBSCRIPT; break;
+    default: assert(false);
   }
 
   n->first = first;
@@ -252,11 +257,11 @@ Right associative:
 02: = += -=                       [✓]
 04: ?: (ternary conditional)      [✓]
 Left associative: --- type parsing starts at this precedence
-06: ||                            [ ]
+06: ||                            [✓]
 08: ^^                            [ ]
-10: &&                            [ ]
-12: == !==                        [ ]
-14: < <= > >=                     [ ]
+10: &&                            [✓]
+12: == !==                        [✓]
+14: < <= > >=                     [✓]
 16: |                             [ ]
 18: ^                             [ ]
 20: &                             [ ]
@@ -294,7 +299,15 @@ u8_pair infix_op_binding_power(Token_Type type) {
     case TQUESTION_MARK:
       return (u8_pair){4,3};
 
+    case TDOUBLE_OR:
+      return (u8_pair){6,5};
+
+    case TDOUBLE_AMPERSAND:
+      return (u8_pair){10,9};
+
     case TDOUBLE_EQUALS:
+      return (u8_pair){12,11};
+
     case TLESS_THAN:
     case TLESS_THAN_OR_EQUAL_TO:
     case TGREATER_THAN:
