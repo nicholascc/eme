@@ -1177,6 +1177,27 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         }
         n->return_type = to;
         return to;
+      } else if(identifier == st_get_id_of("int_cast", -1)) {
+        if(n->arguments.length != 2) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I expected 2 arguments to this function, but got %i instead.\n", n->arguments.length);
+          n->return_type = POISON_TYPE;
+          return n->return_type;
+        }
+        Type to = solidify_type(type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned));
+        Type from = solidify_type(infer_type_of_expr(n->arguments.data[1], scope, unit, true, unit_poisoned));
+        if(to.reference_count > 0 || from.reference_count > 0 || to.info->type != TYPE_INT || from.info->type != TYPE_INT) {
+          type_inference_error(NULL, node->loc, unit_poisoned);
+          printf("I cannot int_cast from ");
+          print_type(from);
+          printf(" -> ", size_of_type(from));
+          print_type(to);
+          printf(" because they must both be integer types.\n", size_of_type(to));
+          n->return_type = POISON_TYPE;
+          return n->return_type;
+        }
+        n->return_type = to;
+        return to;
       } else {
         // if we're calling a user-defined function of any type (e.g. polymorphic struct, foreign function, normal function, etc.)
         Argument *arguments = malloc(n->arguments.length * sizeof(Argument));

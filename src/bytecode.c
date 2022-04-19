@@ -862,6 +862,10 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
           inst.data.set.reg_b = from_reg;
           add_instruction(&fn->blocks.data[*block], inst);
           return to_reg;
+        } else if(symbol == st_get_id_of("int_cast", -1)) {
+          assert(n->arguments.length == 2);
+          u32 from_reg = generate_bytecode_expr(n->arguments.data[1], block, fn, scope);
+          return from_reg;
         }
       }
       Compilation_Unit *body = n->body;
