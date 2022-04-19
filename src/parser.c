@@ -868,7 +868,7 @@ Ast_Node *parse_struct_definition(Token_Reader *r, symbol identifier, Location l
 
   while(true) {
     Token number_sign = peek_token(r);
-    if(number_sign.type == TOPEN_PAREN) {
+    if(number_sign.type == TOPEN_PAREN || number_sign.type == TOPEN_BRACE) {
       open_brace = number_sign;
       break;
     } else if(number_sign.type != TNUMBER_SIGN)
@@ -1070,7 +1070,7 @@ Compilation_Unit *parse_file(int file_id) {
   result->data.module.scope.has_parent = false;
   result->data.module.scope.entries = init_Scope_Entry_Array(2);
 
-  file_data->tokens = lex_string(file_data->contents, 0);
+  file_data->tokens = lex_string(file_data->contents, file_id);
   Token_Reader r = (Token_Reader){file_data->tokens, 0, 0};
 
   while(1) {

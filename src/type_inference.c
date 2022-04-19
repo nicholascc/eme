@@ -138,8 +138,8 @@ bool call_function(symbol identifier, Argument *arguments, int argument_count, b
   while(true) {
     for(int i = 0; i < scope->entries.length; i++) {
       Scope_Entry e = scope->entries.data[i];
-      Compilation_Unit *u = e.data.unit.unit;
       if(scope->type == UNIT_SCOPE) {
+        Compilation_Unit *u = e.data.unit.unit;
         if(e.symbol == identifier) {
           bool matches = try_function_call(arguments, argument_count, is_operator, false, u, return_type, body, NULL);
           if(matches)
@@ -160,14 +160,42 @@ bool call_function(symbol identifier, Argument *arguments, int argument_count, b
   return false;
 }
 
-// DO NOT HOLD THE RETURNED POINTER!
-Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Location error_location, Scope **found_scope) {
+bool try_get_entry_of_exported_identifier(symbol symbol, Compilation_Unit *unit, Scope **found_scope, Scope_Entry **found_entry) {
+  assert(unit->type == UNIT_IMPORT);
+  type_infer_compilation_unit(unit);
+
+  Compilation_Unit *module = unit->data.import.module;
+  assert(module->type == UNIT_MODULE);
+  assert(module->data.module.scope.type == UNIT_SCOPE);
+
+  for(int i = 0; i < module->data.module.scope.entries.length; i++) {
+    Scope_Entry *e = &module->data.module.scope.entries.data[i];
+    if(e->symbol == symbol) {
+      *found_scope = &module->data.module.scope;
+      *found_entry = e;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool try_get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Scope **found_scope, Scope_Entry **found_entry) {
   while(true) {
     for(int i = 0; i < scope->entries.length; i++) {
       Scope_Entry *e = &scope->entries.data[i];
-      if(e->symbol == symbol) {
+      if(scope->type == UNIT_SCOPE) {
+        if(e->symbol == symbol) {
+          *found_scope = scope;
+          *found_entry = e;
+          return true;
+        } else if(e->symbol == st_get_id_of("*", -1)) {
+          bool matches = try_get_entry_of_exported_identifier(symbol, e->data.unit.unit, found_scope, found_entry);
+          if(matches) return true;
+        }
+      } else if(e->symbol == symbol) {
         *found_scope = scope;
-        return e;
+        *found_entry = e;
+        return true;
       }
     }
 
@@ -176,8 +204,18 @@ Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Locat
     else
       break;
   }
-  print_error_message("This symbol is undefined in this scope.", error_location);
-  exit(1);
+  return false;
+}
+
+// DO NOT HOLD THE RETURNED POINTER!
+Scope_Entry *get_entry_of_identifier_in_scope(symbol symbol, Scope *scope, Location error_location, Scope **found_scope) {
+  Scope_Entry *e;
+  if(try_get_entry_of_identifier_in_scope(symbol, scope, found_scope, &e)) {
+    return e;
+  } else {
+    print_error_message("This symbol is undefined in this scope.", error_location);
+    exit(1);
+  }
 }
 
 Type evaluate_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bool *unit_poisoned) {

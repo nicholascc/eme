@@ -302,7 +302,7 @@ Token_Array lex_string(char *to_lex, int file_id) {
       t.type = TLITERAL_STRING;
 
       int len = 0;
-      while(to_lex[i + (++len)] != '\"') {}; // currently no support for escaping
+      while(to_lex[i + (++len)] != '\"'); // currently no support for escaping
 
       loc.character++;
       i += 1;
@@ -311,13 +311,11 @@ Token_Array lex_string(char *to_lex, int file_id) {
       int str_start = i;
       while(i < len-1 + str_start) {
         result_str[i-str_start] = to_lex[i];
-        if(c == '\n') {
+        if(to_lex[i] == '\n') {
           loc.character = 0;
           loc.line++;
           line_is_commented = false;
-          continue;
-        }
-        loc.character++;
+        } else loc.character++;
         i += 1;
       }
       result_str[len-1] = 0;
