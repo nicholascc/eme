@@ -341,6 +341,11 @@ u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params) {
         u8 param;
         memcpy(&param, params[0], sizeof(u8));
         printf("%c", param);
+      } else if(fn->u.name == st_get_id_of("exit", -1)) {
+        u64 param;
+        memcpy(&param, params[0], sizeof(u64));
+        printf("\nThe interpreted code exited with error code %llu.\n", param);
+        exit(param);
       } else {
         printf("The interpreted code tried to call an undefined foreign function: '%s'.\n", st_get_str_of(fn->u.name));
         exit(1);
