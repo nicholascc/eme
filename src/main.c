@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
       generate_bytecode_compilation_unit(body);
       Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
       assert(body->node->type == NODE_FUNCTION_DEFINITION);
-      bool is_main = n->symbol == st_get_id_of("eme", 3);
+      bool is_main = n->symbol == st_get_id_of("main", -1);
       if(is_main) main_found = true;
       if(body->poisoned) {
         compilation_has_errors = true;
@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
   }
 
   if(!main_found) {
-    print_error_message("I can't find the main function. Declare a function 'eme' to serve as the entry point to your program.", NULL_LOCATION);
+    print_error_message("I can't find the main function. Declare a function 'main' to serve as the entry point to your program.", NULL_LOCATION);
     exit(1);
   }
 
@@ -88,7 +88,7 @@ int main(int argc, char *argv[]) {
 
   if(mode == MODE_INTERPRET) {
     printf("Running input code...\n");
-    printf("Result: %lli\n", *((s64 *)interpret_bytecode_unit(main, NULL)));
+    interpret_bytecode_unit(main, NULL);
   } else if(mode == MODE_COMPILE) {
     char *out_obj = NULL;
     char *out_asm = NULL;
