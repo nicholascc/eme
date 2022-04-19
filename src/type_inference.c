@@ -1430,20 +1430,6 @@ void type_infer_function_definition(Ast_Function_Definition *node, Scope *scope,
   node->return_type = type_of_type_expr(node->return_type_node, scope, unit, node->return_type_node->loc, unit_poisoned);
 }
 
-// Just does some basic type checking, since we don't actually know the polymorphic function's argument types yet.
-void type_infer_polymorphic_function(Ast_Function_Definition *node, Compilation_Unit *unit, bool *unit_poisoned) {
-  for(int i = 0; i < node->parameters.length; i++) {
-    if(node->parameters.data[i]->type == NODE_PASSED_PARAMETER) {
-      Ast_Passed_Parameter *param = (Ast_Passed_Parameter *)node->parameters.data[i];
-      Type t = infer_type_of_expr(param->type_node, &node->bound_type_scope, unit, true, unit_poisoned);
-      if(t.info->type == TYPE_POISON) continue;
-      if(t.info->type != TYPE_FTYPE) {
-        type_inference_error("The type of a parameter of a polymorphic function must be a type.", param->type_node->loc, unit_poisoned);
-      }
-    }
-  }
-}
-
 void type_infer_compilation_unit(Compilation_Unit *unit) {
   if(unit->type_inferred || unit->poisoned) return;
   if(unit->type_inference_seen) {
@@ -1498,7 +1484,7 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
       break;
     }
     case UNIT_POLY_FUNCTION: {
-      type_infer_polymorphic_function((Ast_Function_Definition *)unit->node, unit, &unit->poisoned);
+      // we just can't do anything yet
       break;
     }
     case UNIT_IMPORT: {
