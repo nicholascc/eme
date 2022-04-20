@@ -1195,6 +1195,19 @@ Compilation_Unit *parse_file(int file_id) {
       Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
 
       declaration_unit = unit;
+    } else if(node->type == NODE_TYPED_DECL_SET || node->type == NODE_UNTYPED_DECL_SET) {
+      Compilation_Unit *unit = allocate_null_compilation_unit();
+      unit->type = UNIT_CONSTANT;
+      unit->type_inferred = false;
+      unit->type_inference_seen = false;
+      unit->bytecode_generated = false;
+      unit->bytecode_generating = false;
+      unit->poisoned = false;
+      unit->node = node;
+      unit->scope = &result->data.module.scope;
+      Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
+
+      declaration_unit = unit;
     } else if(node->type == NODE_NULL) {
       // do nothing
     } else {

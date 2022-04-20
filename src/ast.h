@@ -119,6 +119,7 @@ typedef enum Compilation_Unit_Type {
   UNIT_POLY_FUNCTION,
   UNIT_FOREIGN_FUNCTION,
   UNIT_IMPORT,
+  UNIT_CONSTANT,
 
   UNIT_MODULE
 } Compilation_Unit_Type;
@@ -174,6 +175,11 @@ typedef struct Compilation_Unit {
     struct {
       Compilation_Unit *module;
     } import;
+
+    struct {
+      u64 value;
+      Type type;
+    } constant;
 
     struct {
       int file_id;

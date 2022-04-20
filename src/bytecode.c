@@ -613,8 +613,15 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
     }
     case NODE_SYMBOL: {
       Ast_Symbol *n = (Ast_Symbol *)node;
-      Scope_Entry *e = get_entry_of_identifier_register_scope(n->symbol, scope, node->loc);
-      return e->data.reg.register_id;
+      Scope *found_scope;
+      Scope_Entry *e = get_entry_of_identifier_in_scope(n->symbol, scope, node->loc, &found_scope);
+      if(found_scope->type == UNIT_SCOPE) {
+        Compilation_Unit *u = e->data.unit.unit;
+        assert(u->type == UNIT_CONSTANT);
+        return add_set_literal_instruction(fn, block, u->data.constant.value, u->data.constant.type);
+      } else if(found_scope->type == REGISTER_SCOPE) {
+        return e->data.reg.register_id;
+      } else assert(false);
     }
     case NODE_BLOCK: {
       return add_block_to_block((Ast_Block *)node, fn, block);

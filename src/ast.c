@@ -457,6 +457,9 @@ Ast_Node *copy_ast_node(Ast_Node *node, Scope *scope) {
     case NODE_LITERAL: {
       return allocate_ast_node(node, sizeof(Ast_Literal));
     }
+    case NODE_LITERAL_STRING: {
+      return allocate_ast_node(node, sizeof(Ast_Literal_String));
+    }
     case NODE_BINARY_OP: {
       Ast_Binary_Op *r = (Ast_Binary_Op *)allocate_ast_node(node, sizeof(Ast_Binary_Op));
       r->first = copy_ast_node(r->first, scope);

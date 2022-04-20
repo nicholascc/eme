@@ -1498,6 +1498,37 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
       unit->data.import.module = file_data->module;
       break;
     }
+    case UNIT_CONSTANT: {
+      Ast_Node *node = unit->node;
+      if(node->type == NODE_TYPED_DECL_SET) {
+        Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)node;
+        Type defined = type_of_type_expr(n->type_node, unit->scope, unit, node->loc, &unit->poisoned);
+        Type inferred = infer_type_of_expr(n->value, unit->scope, unit, true, &unit->poisoned);
+        if(inferred.reference_count != 0 || inferred.info->type != TYPE_UNKNOWN_INT) {
+          type_inference_error("A global constant can only be an integer literal.", node->loc, &unit->poisoned);
+          break;
+        }
+        if(!can_implicitly_cast_type(inferred, defined)) {
+          error_cannot_implicitly_cast(inferred, defined, node->loc, false, &unit->poisoned);
+          unit->data.constant.type = POISON_TYPE;
+          break;
+        }
+
+        unit->data.constant.type = defined;
+        unit->data.constant.value = inferred.info->data.unknown_int;
+      } else if(node->type == NODE_UNTYPED_DECL_SET) {
+        Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)node;
+        Type inferred = infer_type_of_expr(n->value, unit->scope, unit, true, &unit->poisoned);
+        if(inferred.reference_count != 0 || inferred.info->type != TYPE_UNKNOWN_INT) {
+          type_inference_error("A global constant can only be an integer literal.", node->loc, &unit->poisoned);
+          break;
+        }
+
+        unit->data.constant.type = solidify_type(inferred);
+        unit->data.constant.value = inferred.info->data.unknown_int;
+      } else assert(false);
+      break;
+    }
     case UNIT_MODULE: {
       for(int i = 0; i < unit->data.module.scope.entries.length; i++) {
         Scope_Entry entry = unit->data.module.scope.entries.data[i];
@@ -1522,6 +1553,9 @@ Type infer_type_of_compilation_unit(Compilation_Unit *unit) {
     }
     case UNIT_STRUCT_MEMBER: {
       return unit->data.struct_member.type;
+    }
+    case UNIT_CONSTANT: {
+      return unit->data.constant.type;
     }
 
     case UNIT_FUNCTION_SIGNATURE:

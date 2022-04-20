@@ -333,6 +333,15 @@ u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params) {
         memcpy(&param, params[0], sizeof(u64));
         u64 *r_u64 = (u64 *)result;
         *r_u64 = (u64)malloc(param);
+      } else if(fn->u.name == st_get_id_of("realloc", -1)) {
+        result = malloc(sizeof(u64));
+        u64 param0;
+        memcpy(&param0, params[0], sizeof(u64));
+        u64 param1;
+        memcpy(&param1, params[1], sizeof(u64));
+
+        u64 *r_u64 = (u64 *)result;
+        *r_u64 = (u64)realloc((void *)param0, param1);
       } else if(fn->u.name == st_get_id_of("free", -1)) {
         u64 param;
         memcpy(&param, params[0], sizeof(u64));
