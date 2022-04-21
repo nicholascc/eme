@@ -403,7 +403,10 @@ u32 generate_set_expression_ptr(Ast_Node *node, u32 *block, Bytecode_Function *f
     } else if(n->operator == OPSUBSCRIPT || n->operator == OPSUBSCRIPT_REF) {
       return add_subscript_ref(n, block, fn, scope);
     } else assert(false);
-  } else assert(false);
+  } else {
+    print_ast_node(node);
+    assert(false);
+  }
 }
 
 // returns the register storing the result
@@ -1039,5 +1042,4 @@ void generate_bytecode_compilation_unit(Compilation_Unit *unit) {
     print_compilation_unit(unit);
     assert(false);
   }
-
 }

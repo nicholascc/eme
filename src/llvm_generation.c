@@ -31,6 +31,7 @@ LLVMTypeRef llvm_type_of(Type type) {
       u32 element_count = info->data.struct_.members.length;
       LLVMTypeRef *element_types = malloc(sizeof(LLVMTypeRef) * element_count);
       for(int i = 0; i < element_count; i++) {
+        type_infer_compilation_unit(info->data.struct_.members.data[i]);
         element_types[i] = llvm_type_of(info->data.struct_.members.data[i]->data.struct_member.type);
       }
       LLVMStructSetBody(info->data.struct_.llvm_type, element_types, element_count, false);

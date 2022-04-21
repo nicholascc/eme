@@ -90,7 +90,7 @@ Type solidify_type(Type x) {
     case TYPE_POLY_INSTANCE:
     case TYPE_UNIQUE:
       return x;
-      
+
     default:
       print_type_info(x);
       print_error_message("I don't know how to make this type concrete.", NULL_LOCATION);
