@@ -34,6 +34,7 @@ typedef enum Ast_Node_Type {
   NODE_FOREIGN_DEFINITION,
   NODE_STRUCT_DEFINITION,
   NODE_POLY_STRUCT_DEFINITION,
+  NODE_UNIQUE_DEFINITION,
   NODE_IMPORT,
   NODE_RETURN
 } Ast_Node_Type;
@@ -120,6 +121,7 @@ typedef enum Compilation_Unit_Type {
   UNIT_FOREIGN_FUNCTION,
   UNIT_IMPORT,
   UNIT_CONSTANT,
+  UNIT_UNIQUE,
 
   UNIT_MODULE
 } Compilation_Unit_Type;
@@ -180,6 +182,11 @@ typedef struct Compilation_Unit {
       u64 value;
       Type type;
     } constant;
+
+    struct{
+      symbol symbol;
+      Type type;
+    } unique;
 
     struct {
       int file_id;
@@ -406,6 +413,13 @@ typedef struct Ast_Poly_Struct_Definition {
   Scope member_scope;
   Ast_Node_Ptr_Array members;
 } Ast_Poly_Struct_Definition;
+
+typedef struct Ast_Unique_Definition {
+  Ast_Node n;
+  symbol symbol;
+  bool is_export;
+  Ast_Node *node;
+} Ast_Unique_Definition;
 
 typedef struct Ast_Import {
   Ast_Node n;

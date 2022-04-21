@@ -24,6 +24,7 @@ typedef enum Type_Type {
 
   TYPE_STRUCT,
   TYPE_POLY_INSTANCE,
+  TYPE_UNIQUE,
 
   TYPE_FTYPE // The type of a type.
 } Type_Type;
@@ -77,6 +78,10 @@ typedef struct Type_Info {
       bool llvm_generated;
       LLVMTypeRef llvm_type;
     } poly_instance;
+    struct {
+      Type type;
+      symbol name;
+    } unique;
   } data;
 } Type_Info;
 
@@ -95,6 +100,7 @@ void init_primitive_types(); // initializes the above types. MUST BE CALLED UPON
 bool type_equals(Type a, Type b);
 Type allocate_unknown_int_type(int value);
 Type integer_type_with(bool is_signed, u8 width);
+Type make_unique_type(Type original, symbol name);
 
 void print_type(Type t);
 u32 size_of_type(Type t); // Also computes the size of a struct if that size is unknown.

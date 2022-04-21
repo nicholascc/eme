@@ -1034,6 +1034,36 @@ Ast_Node *parse_foreign_definition(Token_Reader *r, symbol identifier, Location 
   return (Ast_Node *)n;
 }
 
+Ast_Node *parse_unique_definition(Token_Reader *r, symbol identifier, Location loc, Scope *scope) {
+  bool is_export = false;
+
+  while(true) {
+    save_state(r);
+    Token number_sign = peek_token(r);
+    if(number_sign.type != TNUMBER_SIGN) {
+      revert_state(r);
+      break;
+    }
+
+    Token sym = peek_token(r);
+    if(sym.type != TSYMBOL)
+      error_unexpected_token(sym);
+
+    symbol s = sym.data.symbol;
+
+    if(s == st_get_id_of("export", -1)) {
+      if(is_export) parse_error("I found the '#export' directive multiple times in this unique definition.", sym.loc, true);
+      is_export = true;
+    } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
+  }
+
+  Ast_Unique_Definition *n = (Ast_Unique_Definition *)allocate_ast_node_type(NODE_UNIQUE_DEFINITION, sizeof(Ast_Unique_Definition));
+  n->symbol = identifier;
+  n->is_export = is_export;
+  n->node = parse_expression(r, scope, 0, NULL, NULL);
+  return (Ast_Node *)n;
+}
+
 Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
   Token identifier = peek_token(r);
   Token double_colon = peek_token(r);
@@ -1045,6 +1075,8 @@ Ast_Node *parse_definition(Token_Reader *r, Scope *scope) {
     return parse_struct_definition(r, identifier.data.symbol, double_colon.loc, scope);
   } else if(def_type.type == TFOREIGN) {
     return parse_foreign_definition(r, identifier.data.symbol, double_colon.loc, scope);
+  } else if(def_type.type == TUNIQUE) {
+    return parse_unique_definition(r, identifier.data.symbol, double_colon.loc, scope);
   } else parse_error("I expected 'struct' or 'fn'.", def_type.loc, true);
 }
 
@@ -1208,6 +1240,19 @@ Compilation_Unit *parse_file(int file_id) {
       Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
 
       declaration_unit = unit;
+    } else if(node->type == NODE_UNIQUE_DEFINITION) {
+      Compilation_Unit *unit = allocate_null_compilation_unit();
+      unit->type = UNIT_UNIQUE;
+      unit->type_inferred = false;
+      unit->type_inference_seen = false;
+      unit->bytecode_generated = false;
+      unit->bytecode_generating = false;
+      unit->poisoned = false;
+      unit->node = node;
+      unit->scope = &result->data.module.scope;
+      Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
+
+      declaration_unit = unit;
     } else if(node->type == NODE_NULL) {
       // do nothing
     } else {
@@ -1222,6 +1267,7 @@ Compilation_Unit *parse_file(int file_id) {
        node->type == NODE_STRUCT_DEFINITION ||
        node->type == NODE_POLY_STRUCT_DEFINITION ||
        node->type == NODE_FOREIGN_DEFINITION ||
+       node->type == NODE_UNIQUE_DEFINITION ||
        node->type == NODE_IMPORT) {
       Scope_Entry e;
       switch(node->type) {
@@ -1232,6 +1278,7 @@ Compilation_Unit *parse_file(int file_id) {
         case NODE_STRUCT_DEFINITION: e.symbol = ((Ast_Struct_Definition *)node)->symbol; break;
         case NODE_POLY_STRUCT_DEFINITION: e.symbol = ((Ast_Poly_Struct_Definition *)node)->symbol; break;
         case NODE_FOREIGN_DEFINITION: e.symbol = ((Ast_Foreign_Definition *)node)->symbol; break;
+        case NODE_UNIQUE_DEFINITION: e.symbol = ((Ast_Unique_Definition *)node)->symbol; break;
         case NODE_IMPORT: e.symbol = st_get_id_of("*", -1); break;
       }
       e.data.unit.unit = declaration_unit;

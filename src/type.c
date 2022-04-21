@@ -50,6 +50,10 @@ u32 size_of_type(Type t) {
         if(info->size % final_alignment != 0) info->size += final_alignment - info->size % final_alignment;
         break;
       }
+      case TYPE_UNIQUE: {
+        info->size = size_of_type(info->data.unique.type);
+        break;
+      }
       case TYPE_INT:
       case TYPE_UNKNOWN_INT:
       case TYPE_BOOL:
@@ -118,7 +122,19 @@ Type integer_type_with(bool is_signed, u8 width) {
 Type allocate_unknown_int_type(int value) {
   Type_Info *info = malloc(sizeof(Type_Info));
   info->type = TYPE_UNKNOWN_INT;
+  info->sized = false;
+  info->sizing_seen = false;
   info->data.unknown_int = value;
+  return (Type){0, info};
+}
+
+Type make_unique_type(Type original, symbol name) {
+  Type_Info *info = malloc(sizeof(Type_Info));
+  info->type = TYPE_UNIQUE;
+  info->sized = false;
+  info->sizing_seen = false;
+  info->data.unique.type = original;
+  info->data.unique.name = name;
   return (Type){0, info};
 }
 
@@ -153,6 +169,7 @@ void print_type_info(Type_Info t) {
       printf(")");
       break;
     }
+    case TYPE_UNIQUE: print_symbol(t.data.unique.name); break;
     default:
       printf("(unprintable type)"); break;
   }

@@ -292,6 +292,15 @@ void print_ast_node(Ast_Node *node) {
       break;
     }
 
+    case NODE_UNIQUE_DEFINITION: {
+      Ast_Unique_Definition *n = (Ast_Unique_Definition *)node;
+      print_symbol(n->symbol);
+      printf (" :: unique ");
+      print_ast_node(n->node);
+      printf(";");
+      break;
+    }
+
     case NODE_IMPORT: {
       Ast_Import *n = (Ast_Import *)node;
       printf("import \"%s\"", n->filename);

@@ -80,15 +80,21 @@ bool can_implicitly_cast_type(Type before, Type after) {
 }
 
 Type solidify_type(Type x) {
-  if(x.info->type == TYPE_POISON) return POISON_TYPE;
-  else if(x.info->type == TYPE_UNKNOWN_INT) {
-    return INT_TYPE;
-  } else if(x.info->type == TYPE_INT || x.info->type == TYPE_BOOL || x.info->type == TYPE_STRUCT || x.info->type == TYPE_POLY_INSTANCE)
-    return x;
-  else {
-    print_type_info(x);
-    print_error_message("I don't know how to make this type concrete.", NULL_LOCATION);
-    return POISON_TYPE;
+  switch(x.info->type) {
+    case TYPE_UNKNOWN_INT:
+      return INT_TYPE;
+
+    case TYPE_INT:
+    case TYPE_BOOL:
+    case TYPE_STRUCT:
+    case TYPE_POLY_INSTANCE:
+    case TYPE_UNIQUE:
+      return x;
+      
+    default:
+      print_type_info(x);
+      print_error_message("I don't know how to make this type concrete.", NULL_LOCATION);
+      return POISON_TYPE;
   }
 }
 
@@ -244,8 +250,11 @@ Type evaluate_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           type_inference_error("I expected this to be a type; instead it something else.", n->n.loc, unit_poisoned);
           return POISON_TYPE;
         }
-        assert(unit->type == UNIT_STRUCT);
-        return unit->data.struct_def.type;
+        if(unit->type == UNIT_STRUCT) {
+          return unit->data.struct_def.type;
+        } else if(unit->type == UNIT_UNIQUE) {
+          return unit->data.unique.type;
+        } else assert(false);
       } else if(found_scope->type == REGISTER_SCOPE) {
         type_inference_error("I cannot use a type declared in a block scope.", n->n.loc, unit_poisoned);
         return POISON_TYPE;
@@ -1529,6 +1538,15 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
       } else assert(false);
       break;
     }
+    case UNIT_UNIQUE: {
+      Ast_Node *node = unit->node;
+      assert(node->type == NODE_UNIQUE_DEFINITION);
+      Ast_Unique_Definition *n = (Ast_Unique_Definition *)node;
+      unit->data.unique.symbol = n->symbol;
+      Type original = type_of_type_expr(n->node, unit->scope, unit, node->loc, &unit->poisoned);
+      unit->data.unique.type = make_unique_type(original, n->symbol);
+      break;
+    }
     case UNIT_MODULE: {
       for(int i = 0; i < unit->data.module.scope.entries.length; i++) {
         Scope_Entry entry = unit->data.module.scope.entries.data[i];
@@ -1548,7 +1566,8 @@ Type infer_type_of_compilation_unit(Compilation_Unit *unit) {
   if(unit->poisoned) return POISON_TYPE;
 
   switch(unit->type) {
-    case UNIT_STRUCT: {
+    case UNIT_STRUCT:
+    case UNIT_UNIQUE: {
       return FTYPE_TYPE;
     }
     case UNIT_STRUCT_MEMBER: {

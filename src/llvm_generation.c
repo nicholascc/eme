@@ -46,6 +46,8 @@ LLVMTypeRef llvm_type_of(Type type) {
       }
       LLVMStructSetBody(info->data.poly_instance.llvm_type, element_types, element_count, false);
       return info->data.poly_instance.llvm_type;
+    } else if(info->type == TYPE_UNIQUE) {
+      return llvm_type_of(info->data.unique.type);
     } else {
       printf("Cannot convert this type to LLVM: ");
       print_type(type);
