@@ -140,6 +140,8 @@ typedef struct Compilation_Unit {
                             // generating bytecode for recursive functions.
   bool poisoned;
 
+  bool is_export;
+
   Ast_Node *node;
   Scope *scope;
 
@@ -334,6 +336,7 @@ typedef struct Ast_Typed_Decl {
 typedef struct Ast_Typed_Decl_Set {
   Ast_Node n;
   symbol symbol;
+  bool is_export;
   Ast_Node *type_node;
   Ast_Node *value;
 } Ast_Typed_Decl_Set;
@@ -341,6 +344,7 @@ typedef struct Ast_Typed_Decl_Set {
 typedef struct Ast_Untyped_Decl_Set {
   Ast_Node n;
   symbol symbol;
+  bool is_export;
   Ast_Node *value;
 } Ast_Untyped_Decl_Set;
 
@@ -423,6 +427,7 @@ typedef struct Ast_Unique_Definition {
 
 typedef struct Ast_Import {
   Ast_Node n;
+  bool is_export;
   char *filename;
 } Ast_Import;
 

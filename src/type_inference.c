@@ -117,9 +117,9 @@ typedef struct Argument {
 } Argument;
 
 // return_type is set if the function returns true.
-bool try_function_call(Argument *arguments, int argument_count, bool is_operator, bool is_export, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned);
 
-bool call_exported_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
+bool call_exported_function(symbol identifier, Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **body, bool *unit_poisoned) {
   assert(unit->type == UNIT_IMPORT);
   type_infer_compilation_unit(unit);
 
@@ -130,8 +130,14 @@ bool call_exported_function(symbol identifier, Argument *arguments, int argument
   for(int i = 0; i < module->data.module.scope.entries.length; i++) {
     Scope_Entry e = module->data.module.scope.entries.data[i];
     Compilation_Unit *u = e.data.unit.unit;
+    if(!u->is_export) continue;
+    if(u->type == UNIT_IMPORT) {
+      bool matches = call_exported_function(identifier, arguments, argument_count, is_operator, u, return_type, body, NULL);
+      if(matches)
+        return true;
+    }
     if(e.symbol == identifier) {
-      bool matches = try_function_call(arguments, argument_count, is_operator, true, u, return_type, to_call, NULL);
+      bool matches = try_function_call(arguments, argument_count, is_operator, u, return_type, body, NULL);
       if(matches)
         return true;
     }
@@ -147,7 +153,7 @@ bool call_function(symbol identifier, Argument *arguments, int argument_count, b
       if(scope->type == UNIT_SCOPE) {
         Compilation_Unit *u = e.data.unit.unit;
         if(e.symbol == identifier) {
-          bool matches = try_function_call(arguments, argument_count, is_operator, false, u, return_type, body, NULL);
+          bool matches = try_function_call(arguments, argument_count, is_operator, u, return_type, body, NULL);
           if(matches)
             return true;
         } else if(e.symbol == st_get_id_of("*",-1)) {
@@ -176,6 +182,13 @@ bool try_get_entry_of_exported_identifier(symbol symbol, Compilation_Unit *unit,
 
   for(int i = 0; i < module->data.module.scope.entries.length; i++) {
     Scope_Entry *e = &module->data.module.scope.entries.data[i];
+    Compilation_Unit *u = e->data.unit.unit;
+    if(!u->is_export) continue;
+    if(u->type == UNIT_IMPORT) {
+      bool matches = try_get_entry_of_exported_identifier(symbol, u, found_scope, found_entry);
+      if(matches) return true;
+        continue;
+    }
     if(e->symbol == symbol) {
       *found_scope = &module->data.module.scope;
       *found_entry = e;
@@ -656,12 +669,12 @@ bool assign_bound_type_to_poly_function_arguments(Scope *scope, Scope *instance_
   }
 }
 
-bool try_function_call(Argument *arguments, int argument_count, bool is_operator, bool is_export, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
+bool try_function_call(Argument *arguments, int argument_count, bool is_operator, Compilation_Unit *unit, Type *return_type, Compilation_Unit **to_call, bool *unit_poisoned) {
   if(unit->type == UNIT_FUNCTION_SIGNATURE) {
     type_infer_compilation_unit(unit);
 
     Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-    if(argument_count != def->parameters.length || (is_operator && !def->is_operator) || (is_export && !def->is_export))
+    if(argument_count != def->parameters.length || (is_operator && !def->is_operator))
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -685,7 +698,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
   } else if(unit->node->type == NODE_FOREIGN_DEFINITION) {
     type_infer_compilation_unit(unit);
     Ast_Foreign_Definition *def = (Ast_Foreign_Definition *)unit->node;
-    if(argument_count != def->parameter_types.length || is_operator || (is_export && !def->is_export))
+    if(argument_count != def->parameter_types.length || is_operator)
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {
@@ -704,7 +717,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
     type_infer_compilation_unit(unit);
 
     Ast_Function_Definition *def = (Ast_Function_Definition *)unit->node;
-    if(argument_count != def->parameters.length || (is_operator && !def->is_operator) || (is_export && !def->is_export))
+    if(argument_count != def->parameters.length || (is_operator && !def->is_operator))
       return false;
     else {
       // we establish a 1:1 mapping from scope entries in the BOUND_TYPE_SCOPE scope to their actual types, placed in the BOUND_TYPE_INSTANCE_SCOPE
@@ -814,7 +827,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
     type_infer_compilation_unit(unit);
 
     Ast_Poly_Struct_Definition *def = (Ast_Poly_Struct_Definition *)unit->node;
-    if(argument_count != def->parameters.length || is_operator || (is_export && !def->is_export))
+    if(argument_count != def->parameters.length || is_operator)
       return false;
     else {
       for(int i = 0; i < argument_count; i++) {

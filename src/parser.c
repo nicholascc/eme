@@ -523,7 +523,7 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
   if(first.type == TSYMBOL) { // could be decl, definition, or expression
     Token second = peek_token(r);
 
-    if(second.type == TCOLON) {
+    if(second.type == TCOLON || second.type == TNUMBER_SIGN) {
       revert_state(r);
       return parse_decl(r, scope);
     } else if(second.type == TDOUBLE_COLON) {
@@ -538,12 +538,29 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
     Ast_Import *n = (Ast_Import *)allocate_ast_node_type(NODE_IMPORT, sizeof(Ast_Import));
     n->n.loc = first.loc;
 
-    {
-      Token t = peek_token(r);
-      if(t.type != TLITERAL_STRING)
-        error_unexpected_token(t);
-      n->filename = t.data.literal_string;
+    n->is_export = false;
+    Token literal;
+    while(true) {
+      Token number_sign = peek_token(r);
+      if(number_sign.type == TLITERAL_STRING) {
+        literal = number_sign;
+        break;
+      } else if(number_sign.type != TNUMBER_SIGN)
+        error_unexpected_token(number_sign);
+
+      Token sym = peek_token(r);
+      if(sym.type != TSYMBOL)
+        error_unexpected_token(sym);
+
+      symbol s = sym.data.symbol;
+      if(s == st_get_id_of("export", -1)) {
+        if(n->is_export) parse_error("I found the '#export' directive multiple times in this import.", sym.loc, true);
+        n->is_export = true;
+      } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
     }
+
+
+    n->filename = literal.data.literal_string;
 
     return (Ast_Node *)n;
   } else if(first.type == TRETURN) {
@@ -658,8 +675,29 @@ Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semico
 
 Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
   Token id = peek_token(r);
-  Token colon = peek_token(r);
-  assert(colon.type == TCOLON && "(internal compiler error) declaration's second token must be a colon.");
+
+  Token colon;
+  bool is_export = false;
+  while(true) {
+    Token number_sign = peek_token(r);
+    if(number_sign.type == TCOLON) {
+      colon = number_sign;
+      break;
+    } else if(number_sign.type != TNUMBER_SIGN)
+      error_unexpected_token(number_sign);
+
+    Token sym = peek_token(r);
+    if(sym.type != TSYMBOL)
+      error_unexpected_token(sym);
+
+    symbol s = sym.data.symbol;
+
+    if(s == st_get_id_of("export", -1)) {
+      if(is_export) parse_error("I found the '#export' directive multiple times in this declaration.", sym.loc, true);
+      is_export = true;
+    } else parse_error("I do not recognize this compiler directive.", sym.loc, true);
+  }
+
   save_state(r);
   Token type = peek_token(r);
 
@@ -669,6 +707,7 @@ Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
     Ast_Untyped_Decl_Set *n = (Ast_Untyped_Decl_Set *)allocate_ast_node_type(NODE_UNTYPED_DECL_SET, sizeof(Ast_Untyped_Decl_Set));
     n->n.loc = colon.loc;
     n->symbol = id.data.symbol;
+    n->is_export = is_export;
     n->value = value_ast;
     return (Ast_Node *)n;
   } else {
@@ -689,6 +728,7 @@ Ast_Node *parse_decl(Token_Reader *r, Scope *scope) {
       Ast_Typed_Decl_Set *n = (Ast_Typed_Decl_Set *)allocate_ast_node_type(NODE_TYPED_DECL_SET, sizeof(Ast_Typed_Decl_Set));
       n->n.loc = colon.loc;
       n->symbol = id.data.symbol;
+      n->is_export = is_export;
       n->type_node = type_ast;
       n->value = value_ast;
       return (Ast_Node *)n;
@@ -1008,13 +1048,21 @@ Ast_Node *parse_foreign_definition(Token_Reader *r, symbol identifier, Location 
 
   n->parameters = init_Ast_Node_Ptr_Array(2);
   n->parameter_types = init_Type_Array(2);
-  while(true) {
-    Ast_Node_Ptr_Array_push(&n->parameters, parse_expression(r, scope, 0, NULL, NULL));
-    Type_Array_push(&n->parameter_types, UNKNOWN_TYPE);
-    Token comma = peek_token(r);
-    if(comma.type == TCOMMA) continue;
-    else if(comma.type == TCLOSE_PAREN) break;
-    else error_unexpected_token(comma);
+
+  save_state(r);
+  Token close_paren = peek_token(r);
+  if(close_paren.type != TCLOSE_PAREN) {
+    revert_state(r);
+    while(true) {
+      Ast_Node_Ptr_Array_push(&n->parameters, parse_expression(r, scope, 0, NULL, NULL));
+      Type_Array_push(&n->parameter_types, UNKNOWN_TYPE);
+      Token comma = peek_token(r);
+      if(comma.type == TCOMMA) continue;
+      else if(comma.type == TCLOSE_PAREN) {
+        close_paren = comma;
+        break;
+      } else error_unexpected_token(comma);
+    }
   }
 
   save_state(r);
@@ -1127,6 +1175,7 @@ Compilation_Unit *parse_file(int file_id) {
         fn->bytecode_generated = false;
         fn->bytecode_generating = false;
         fn->poisoned = false;
+        fn->is_export = n->is_export;
         fn->node = node;
         fn->scope = &result->data.module.scope;
         fn->data.poly_function_def.instances = init_Compilation_Unit_Ptr_Table();
@@ -1146,6 +1195,7 @@ Compilation_Unit *parse_file(int file_id) {
         sig->bytecode_generated = false;
         sig->bytecode_generating = false;
         sig->poisoned = false;
+        sig->is_export = n->is_export;
         sig->node = node;
         sig->scope = &result->data.module.scope;
         sig->data.signature.body = body;
@@ -1157,6 +1207,7 @@ Compilation_Unit *parse_file(int file_id) {
         body->bytecode_generated = false;
         body->bytecode_generating = false;
         body->poisoned = false;
+        body->is_export = n->is_export;
         body->node = node;
         body->scope = &result->data.module.scope;
         body->data.body.signature = sig;
@@ -1167,6 +1218,8 @@ Compilation_Unit *parse_file(int file_id) {
         declaration_unit = sig;
       } else assert(false);
     } else if(node->type == NODE_FOREIGN_DEFINITION) {
+      Ast_Foreign_Definition *n = (Ast_Foreign_Definition *)node;
+
       Compilation_Unit *sig = allocate_null_compilation_unit();
       sig->type = UNIT_FOREIGN_FUNCTION;
       sig->type_inferred = false;
@@ -1174,6 +1227,7 @@ Compilation_Unit *parse_file(int file_id) {
       sig->bytecode_generated = false;
       sig->bytecode_generating = false;
       sig->poisoned = false;
+      sig->is_export = n->is_export;
       sig->node = node;
       sig->scope = &result->data.module.scope;
       sig->data.foreign.bytecode = allocate_bytecode_unit_type(BYTECODE_FOREIGN_FUNCTION, sizeof(Bytecode_Foreign_Function));
@@ -1190,6 +1244,7 @@ Compilation_Unit *parse_file(int file_id) {
       unit->bytecode_generated = false;
       unit->bytecode_generating = false;
       unit->poisoned = false;
+      unit->is_export = n->is_export;
       unit->node = node;
       unit->scope = &result->data.module.scope;
       unit->data.struct_def.type = UNKNOWN_TYPE;
@@ -1206,6 +1261,7 @@ Compilation_Unit *parse_file(int file_id) {
       unit->bytecode_generated = false;
       unit->bytecode_generating = false;
       unit->poisoned = false;
+      unit->is_export = n->is_export;
       unit->node = node;
       unit->scope = &result->data.module.scope;
       unit->data.poly_struct_def.instances = init_Type_Table();
@@ -1222,6 +1278,7 @@ Compilation_Unit *parse_file(int file_id) {
       unit->bytecode_generated = false;
       unit->bytecode_generating = false;
       unit->poisoned = false;
+      unit->is_export = n->is_export;
       unit->node = node;
       unit->scope = &result->data.module.scope;
       Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
@@ -1235,12 +1292,19 @@ Compilation_Unit *parse_file(int file_id) {
       unit->bytecode_generated = false;
       unit->bytecode_generating = false;
       unit->poisoned = false;
+      if(node->type == NODE_TYPED_DECL_SET)
+        unit->is_export = ((Ast_Typed_Decl_Set *)node)->is_export;
+      else if(node->type == NODE_UNTYPED_DECL_SET)
+        unit->is_export = ((Ast_Untyped_Decl_Set *)node)->is_export;
+      else assert(false);
       unit->node = node;
       unit->scope = &result->data.module.scope;
       Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
 
       declaration_unit = unit;
     } else if(node->type == NODE_UNIQUE_DEFINITION) {
+      Ast_Unique_Definition *n = (Ast_Unique_Definition *)node;
+
       Compilation_Unit *unit = allocate_null_compilation_unit();
       unit->type = UNIT_UNIQUE;
       unit->type_inferred = false;
@@ -1248,6 +1312,7 @@ Compilation_Unit *parse_file(int file_id) {
       unit->bytecode_generated = false;
       unit->bytecode_generating = false;
       unit->poisoned = false;
+      unit->is_export = n->is_export;
       unit->node = node;
       unit->scope = &result->data.module.scope;
       Compilation_Unit_Ptr_Array_push(&result->data.module.compilation_units, unit);
