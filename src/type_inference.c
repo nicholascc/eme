@@ -990,8 +990,9 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
               assert(unit->type == UNIT_STRUCT_MEMBER);
               if(unit->data.struct_member.symbol == sym) {
                 type_infer_compilation_unit(unit);
-                if(n->operator == OPSTRUCT_MEMBER_REF) unit->data.struct_member.type.reference_count++;
-                return unit->data.struct_member.type;
+                Type t = unit->data.struct_member.type;
+                if(n->operator == OPSTRUCT_MEMBER_REF) t.reference_count++;
+                return t;
               }
             }
           } else if(first.info->type == TYPE_POLY_INSTANCE) {
