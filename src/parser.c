@@ -132,6 +132,10 @@ typedef struct Symbol_Type_Pair {
 Symbol_Type_Pair pair_boolean = {NULL_SYMBOL, {0,NULL}};
 Symbol_Type_Pair pair_type = {NULL_SYMBOL, {0,NULL}};
 
+Symbol_Type_Pair pair_f32 = {NULL_SYMBOL, {0,NULL}};
+Symbol_Type_Pair pair_f64 = {NULL_SYMBOL, {0,NULL}};
+Symbol_Type_Pair pair_float = {NULL_SYMBOL, {0,NULL}};
+
 void register_parser_symbols() {
   for(int i = 0; i < SYMBOL_INTEGERS_COUNT; i++) {
     symbol_integers[i].sym = st_get_id_of((char *)symbol_integers[i].str, -1);
@@ -141,6 +145,13 @@ void register_parser_symbols() {
   pair_boolean.type = BOOL_TYPE;
   pair_type.sym = st_get_id_of("type", -1);
   pair_type.type = FTYPE_TYPE;
+
+  pair_f32.sym = st_get_id_of("f32", -1);
+  pair_f32.type = FLOAT32_TYPE;
+  pair_f64.sym = st_get_id_of("f64", -1);
+  pair_f64.type = FLOAT64_TYPE;
+  pair_float.sym = st_get_id_of("float", -1);
+  pair_float.type = FLOAT64_TYPE;
 }
 
 Ast_Symbol *symbol_to_ast(Token t) {
@@ -173,6 +184,12 @@ Ast_Node *symbol_or_prim_type_to_ast(Token t) {
     return (Ast_Node *)prim_type_to_ast(t, pair_boolean.type);
   if(t.data.symbol == pair_type.sym)
     return (Ast_Node *)prim_type_to_ast(t, pair_type.type);
+  if(t.data.symbol == pair_f32.sym)
+    return (Ast_Node *)prim_type_to_ast(t, pair_f32.type);
+  if(t.data.symbol == pair_f64.sym)
+    return (Ast_Node *)prim_type_to_ast(t, pair_f64.type);
+  if(t.data.symbol == pair_float.sym)
+    return (Ast_Node *)prim_type_to_ast(t, pair_float.type);
 
   return (Ast_Node *)symbol_to_ast(t);
 }

@@ -19,6 +19,7 @@ typedef enum Type_Type {
 
   TYPE_INT,
   TYPE_UNKNOWN_INT,
+  TYPE_FLOAT,
   TYPE_BOOL,
   TYPE_UNKNOWN_STRING,
 
@@ -64,6 +65,9 @@ typedef struct Type_Info {
       u8 width; // including sign bit
     } integer;
     struct {
+      u8 width;
+    } float_;
+    struct {
       Ast_Struct_Definition *definition;
       Compilation_Unit_Ptr_Array members;
       bool llvm_generated;
@@ -94,12 +98,15 @@ Type INT_TYPE;
 Type UINT_TYPE;
 // ordered unsigned first, least to greatest width (8-64).
 Type INTEGER_TYPES[2][4];
+Type FLOAT32_TYPE;
+Type FLOAT64_TYPE;
 Type FTYPE_TYPE;
 
 void init_primitive_types(); // initializes the above types. MUST BE CALLED UPON STARTUP!
 bool type_equals(Type a, Type b);
 Type allocate_unknown_int_type(int value);
 Type integer_type_with(bool is_signed, u8 width);
+Type float_type_with(u8 width);
 Type make_unique_type(Type original, symbol name);
 
 void print_type(Type t);

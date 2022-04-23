@@ -1,7 +1,12 @@
 #include "interpreter.h"
 
+#include "math.h"
+
 #include "c-utils/integer.h"
 #include "bytecode.h"
+
+typedef float f32;
+typedef double f64;
 
 void print_hex(u8 *arr, u32 size) {
   for(int i = 0; i < size; i++) {
@@ -13,28 +18,85 @@ void print_hex(u8 *arr, u32 size) {
 void interpreter_cast(u8 *a, u8 *b, Type a_type, Type b_type) {
   u32 a_size = size_of_type(a_type);
   u32 b_size = size_of_type(b_type);
-  if(a_type.info->type == TYPE_INT && a_size < b_size && a_type.info->data.integer.is_signed) {
-    assert(b_type.info->type == TYPE_INT);
-    s64 x;
-    switch(a_size) {
-      case 1: x = *((s8 *)a); break;
-      case 2: x = *((s16 *)a); break;
-      case 4: x = *((s32 *)a); break;
-      case 8: x = *((s64 *)a); break;
-      default: assert(false);
-    }
-    switch(b_size) {
-      case 1: *((s8 *)b) = (s8)x; break;
-      case 2: *((s16 *)b) = (s16)x; break;
-      case 4: *((s32 *)b) = (s32)x; break;
-      case 8: *((s64 *)b) = (s64)x; break;
-      default: assert(false);
-    }
-  } else if(a_size < b_size) {
+
+  if(type_equals(a_type, b_type)) {
     memcpy(b, a, a_size);
-    memset((u8 *)(a_size + (u64)b), 0, b_size - a_size);
-  } else {
-    memcpy(b, a, b_size);
+  }
+
+  if(a_type.info->type == TYPE_INT) {
+    if(b_type.info->type == TYPE_INT) {
+      if(a_size < b_size && a_type.info->data.integer.is_signed) {
+        s64 x;
+        switch(a_size) {
+          case 1: x = *((s8 *)a); break;
+          case 2: x = *((s16 *)a); break;
+          case 4: x = *((s32 *)a); break;
+          case 8: x = *((s64 *)a); break;
+          default: assert(false);
+        }
+        switch(b_size) {
+          case 1: *((s8 *)b)  = (s8)x; break;
+          case 2: *((s16 *)b) = (s16)x; break;
+          case 4: *((s32 *)b) = (s32)x; break;
+          case 8: *((s64 *)b) = (s64)x; break;
+          default: assert(false);
+        }
+      } else if(a_size < b_size) {
+        memcpy(b, a, a_size);
+        memset((u8 *)(a_size + (u64)b), 0, b_size - a_size);
+      } else {
+        memcpy(b, a, b_size);
+      }
+    } else if(b_type.info->type == TYPE_FLOAT) {
+      if(a_type.info->data.integer.is_signed) {
+        s64 x;
+        switch(a_size) {
+          case 1: x = *((s8 *)a); break;
+          case 2: x = *((s16 *)a); break;
+          case 4: x = *((s32 *)a); break;
+          case 8: x = *((s64 *)a); break;
+          default: assert(false);
+        }
+        switch(b_size) {
+          case 4: *((f32 *)b) = (f32)x; break;
+          case 8: *((f64 *)b) = (f64)x; break;
+          default: assert(false);
+        }
+      }
+    } else assert(false);
+
+  } else if(a_type.info->type == TYPE_FLOAT) {
+    f64 x;
+    switch(a_size) {
+      case 4: x = *((f32 *)a); break;
+      case 8: x = *((f64 *)a); break;
+      default: assert(false);
+    }
+    if(b_type.info->type == TYPE_FLOAT) {
+      switch(b_size) {
+        case 4: *((f32 *)b) = (f32)x; break;
+        case 8: *((f64 *)b) = x; break;
+        default: assert(false);
+      }
+    } else if(b_type.info->type == TYPE_INT) {
+      if(b_type.info->data.integer.is_signed) {
+        switch(b_size) {
+          case 1: *((s8 *)b)  = (s8)x; break;
+          case 2: *((s16 *)b) = (s16)x; break;
+          case 4: *((s32 *)b) = (s32)x; break;
+          case 8: *((s64 *)b) = (s64)x; break;
+          default: assert(false);
+        }
+      } else {
+        switch(b_size) {
+          case 1: *((u8 *)b)  = (u8)x; break;
+          case 2: *((u16 *)b) = (u16)x; break;
+          case 4: *((u32 *)b) = (u32)x; break;
+          case 8: *((u64 *)b) = (u64)x; break;
+          default: assert(false);
+        }
+      }
+    } else assert(false);
   }
 }
 
@@ -73,25 +135,63 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         u32 reg_b = inst.data.bin_op.reg_b;
         u32 reg_c = inst.data.bin_op.reg_c;
         Type result_type = fn.register_types.data[reg_a];
-        assert(result_type.info->type == TYPE_INT);
+        Type b_type = fn.register_types.data[reg_b];
+        Type c_type = fn.register_types.data[reg_c];
 
-        u64 b, c;
-        memcpy(&b, &local[r_to_id[reg_b]], size_of_type(fn.register_types.data[reg_b]));
-        memcpy(&c, &local[r_to_id[reg_c]], size_of_type(fn.register_types.data[reg_c]));
+        assert(result_type.reference_count == 0);
 
-        u64 a;
-        if(inst.type == BC_ADD)
-          a = b + c;
-        else if(inst.type == BC_SUB)
-          a = b - c;
-        else if(inst.type == BC_MUL)
-          a = b * c;
-        else if(inst.type == BC_DIV) {
-          if(c == 0) assert(false); // TODO: HANDLE INTERPRETER ERRORS PROPERLY
-          a = b / c;
+        if(result_type.info->type == TYPE_INT) {
+          u64 b, c;
+          interpreter_cast(&local[r_to_id[reg_b]], (u8*)&b, b_type, result_type);
+          interpreter_cast(&local[r_to_id[reg_c]], (u8*)&c, c_type, result_type);
+
+          u64 a;
+          if(inst.type == BC_ADD)
+            a = b + c;
+          else if(inst.type == BC_SUB)
+            a = b - c;
+          else if(inst.type == BC_MUL)
+            a = b * c;
+          else if(inst.type == BC_DIV) {
+            if(c == 0) assert(false); // TODO: HANDLE INTERPRETER ERRORS PROPERLY
+            a = b / c;
+          } else assert(false);
+
+          memcpy(&local[r_to_id[reg_a]], &a, size_of_type(result_type));
+
+
+        } else if(result_type.info->type == TYPE_FLOAT) {
+          f64 b, c;
+          if(result_type.info->data.float_.width == 32) {
+            f32 b32, c32;
+            interpreter_cast(&local[r_to_id[reg_b]], (u8*)&b32, b_type, result_type);
+            interpreter_cast(&local[r_to_id[reg_c]], (u8*)&c32, c_type, result_type);
+            b = (f64)b32;
+            c = (f64)c32;
+          } else if(result_type.info->data.float_.width == 64) {
+            interpreter_cast(&local[r_to_id[reg_b]], (u8*)&b, b_type, result_type);
+            interpreter_cast(&local[r_to_id[reg_c]], (u8*)&c, c_type, result_type);
+          } else assert(false);
+
+          f64 a;
+          if(inst.type == BC_ADD)
+            a = b + c;
+          else if(inst.type == BC_SUB)
+            a = b - c;
+          else if(inst.type == BC_MUL)
+            a = b * c;
+          else if(inst.type == BC_DIV) {
+            if(c == 0) assert(false); // TODO: HANDLE INTERPRETER ERRORS PROPERLY
+            a = b / c;
+          } else assert(false);
+
+          if(result_type.info->data.float_.width == 32) {
+            f32 a32 = (f32)a;
+            memcpy(&local[r_to_id[reg_a]], &a32, size_of_type(result_type));
+          } else if(result_type.info->data.float_.width == 64) {
+            memcpy(&local[r_to_id[reg_a]], &a, size_of_type(result_type));
+          } else assert(false);
         } else assert(false);
-
-        memcpy(&local[r_to_id[reg_a]], &a, size_of_type(fn.register_types.data[reg_a]));
         break;
       }
       case BC_OR:
@@ -124,31 +224,64 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         u32 reg_c = inst.data.bin_op.reg_c;
         Type b_type = fn.register_types.data[reg_b];
         Type c_type = fn.register_types.data[reg_c];
-        assert(b_type.info->type == TYPE_INT && c_type.info->type == TYPE_INT);
 
-        u64 b = 0;
-        u64 c = 0;
-        memcpy(&b, &local[r_to_id[reg_b]], size_of_type(fn.register_types.data[reg_b]));
-        memcpy(&c, &local[r_to_id[reg_c]], size_of_type(fn.register_types.data[reg_c]));
+        if(b_type.info->type == TYPE_INT) {
+          Type conv_type = integer_type_with(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed, max(b_type.info->data.integer.width, c_type.info->data.integer.width));
+          u64 b, c;
+          interpreter_cast(&local[r_to_id[reg_b]], (u8*)&b, b_type, conv_type);
+          interpreter_cast(&local[r_to_id[reg_c]], (u8*)&c, c_type, conv_type);
 
-        bool a;
-        if(inst.type == BC_LESS_THAN) {
-          if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
-            a = *((s64 *)&b) < *((s64 *)&c);
-          } else {
+          bool a;
+          if(inst.type == BC_LESS_THAN) {
+            if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
+              a = *((s64 *)&b) < *((s64 *)&c);
+            } else {
+              a = b < c;
+            }
+          } else if(inst.type == BC_LESS_THAN_EQUALS) {
+            a = b == c;
+            if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
+              a |= *((s64 *)&b) < *((s64 *)&c);
+            } else {
+              a |= b < c;
+            }
+          } else if(inst.type == BC_EQUALS) {
+            a = b == c;
+          }
+          local[r_to_id[reg_a]] = a;
+          break;
+
+          
+        } else if(b_type.info->type == TYPE_FLOAT) {
+          Type conv_type;
+          if(can_implicitly_cast_type(b_type, c_type)) {
+            conv_type = c_type;
+          } else if(can_implicitly_cast_type(c_type, b_type)) {
+            conv_type = b_type;
+          } else assert(false);
+
+          f64 b, c;
+          if(conv_type.info->data.float_.width == 32) {
+            f32 b32, c32;
+            interpreter_cast(&local[r_to_id[reg_b]], (u8*)&b32, b_type, conv_type);
+            interpreter_cast(&local[r_to_id[reg_c]], (u8*)&c32, c_type, conv_type);
+            b = (f64)b32;
+            c = (f64)c32;
+          } else if(conv_type.info->data.float_.width == 64) {
+            interpreter_cast(&local[r_to_id[reg_b]], (u8*)&b, b_type, conv_type);
+            interpreter_cast(&local[r_to_id[reg_c]], (u8*)&c, c_type, conv_type);
+          } else assert(false);
+
+          bool a;
+          if(inst.type == BC_LESS_THAN) {
             a = b < c;
+          } else if(inst.type == BC_LESS_THAN_EQUALS) {
+            a = b <= c;
+          } else if(inst.type == BC_EQUALS) {
+            a = b == c;
           }
-        } else if(inst.type == BC_LESS_THAN_EQUALS) {
-          a = b == c;
-          if(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed) {
-            a |= *((s64 *)&b) < *((s64 *)&c);
-          } else {
-            a |= b < c;
-          }
-        } else if(inst.type == BC_EQUALS) {
-          a = b == c;
-        }
-        local[r_to_id[reg_a]] = a;
+          local[r_to_id[reg_a]] = a;
+        } else assert(false);
         break;
       }
 
@@ -355,6 +488,16 @@ u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params) {
         memcpy(&param, params[0], sizeof(u64));
         printf("\nThe interpreted code exited with error code %llu.\n", param);
         exit(param);
+      } else if(fn->u.name == st_get_id_of("sqrtl", -1)) {
+        result = malloc(sizeof(f64));
+        f64 param;
+        memcpy(&param, params[0], sizeof(f64));
+        f64 *r_u64 = (f64 *)result;
+        *r_u64 = sqrtl(param);
+      } else if(fn->u.name == st_get_id_of("print_float", -1)) {
+        f64 param;
+        memcpy(&param, params[0], sizeof(f64));
+        printf("%lf", param);
       } else {
         printf("The interpreted code tried to call an undefined foreign function: '%s'.\n", st_get_str_of(fn->u.name));
         exit(1);

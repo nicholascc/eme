@@ -20,7 +20,11 @@ LLVMTypeRef llvm_type_of(Type type) {
     Type_Info *info = type.info;
     if(info->type == TYPE_INT) {
       return LLVMIntType(info->data.integer.width);
-    } else if(info->type == TYPE_BOOL) {
+    } else if(info->type == TYPE_FLOAT) {
+      if(info->data.float_.width == 32) return LLVMFloatType();
+      else if(info->data.float_.width == 64) return LLVMDoubleType();
+      else assert(false);
+    } if(info->type == TYPE_BOOL) {
       return LLVMIntType(1);
     } else if(info->type == TYPE_NOTHING) {
       return LLVMVoidType();
@@ -58,20 +62,43 @@ LLVMTypeRef llvm_type_of(Type type) {
   }
 }
 
-inline LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type a_type, Type b_type) {
+LLVMValueRef generate_llvm_cast(LLVMBuilderRef builder, LLVMValueRef a, Type a_type, Type b_type) {
+  if(type_equals(a_type, b_type)) return a;
+
   if(a_type.info->type == TYPE_INT) {
-    assert(b_type.info->type == TYPE_INT);
-    u8 a_width = a_type.info->data.integer.width;
-    u8 b_width = b_type.info->data.integer.width;
-    if(a_width < b_width) {
+    if(b_type.info->type == TYPE_FLOAT) {
       if(a_type.info->data.integer.is_signed)
-        return LLVMBuildSExt(builder, a, LLVMIntType(b_width), "");
+        return LLVMBuildSIToFP(builder, a, llvm_type_of(b_type), "");
       else
-        return LLVMBuildZExt(builder, a, LLVMIntType(b_width), "");
-    } else if(a_width > b_width)
-      return LLVMBuildTrunc(builder, a, LLVMIntType(b_width), "");
-    else
-      return a;
+        return LLVMBuildUIToFP(builder, a, llvm_type_of(b_type), "");
+    } else if(b_type.info->type == TYPE_INT) {
+      u8 a_width = a_type.info->data.integer.width;
+      u8 b_width = b_type.info->data.integer.width;
+      if(a_width < b_width) {
+        if(a_type.info->data.integer.is_signed)
+          return LLVMBuildSExt(builder, a, LLVMIntType(b_width), "");
+        else
+          return LLVMBuildZExt(builder, a, LLVMIntType(b_width), "");
+      } else if(a_width > b_width)
+        return LLVMBuildTrunc(builder, a, LLVMIntType(b_width), "");
+      else
+        return a;
+    } else assert(false);
+  } else if(a_type.info->type == TYPE_FLOAT) {
+    if(b_type.info->type == TYPE_FLOAT) {
+      u8 a_width = a_type.info->data.float_.width;
+      u8 b_width = b_type.info->data.float_.width;
+      if(a_width < b_width)
+        return LLVMBuildFPExt(builder, a, llvm_type_of(b_type), "");
+      else if(a_width > b_width)
+        return LLVMBuildFPTrunc(builder, a, llvm_type_of(b_type), "");
+      else return a;
+    } else if(b_type.info->type == TYPE_INT) {
+      if(b_type.info->data.integer.is_signed)
+        return LLVMBuildFPToSI(builder, a, llvm_type_of(b_type), "");
+      else
+        return LLVMBuildFPToUI(builder, a, llvm_type_of(b_type), "");
+    } else assert(false);
   } else {
     return a;
   }
@@ -161,7 +188,6 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
 
 
           Type a_type = fn.register_types.data[inst.data.bin_op.reg_a];
-          assert(a_type.info->type == TYPE_INT);
           {
             Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
             Type c_type = fn.register_types.data[inst.data.bin_op.reg_c];
@@ -171,16 +197,28 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           }
 
           LLVMValueRef a;
-          if(inst.type == BC_ADD) {
-            a = LLVMBuildAdd(builder, b, c, "");
-          } else if(inst.type == BC_SUB) {
-            a = LLVMBuildSub(builder, b, c, "");
-          } else if(inst.type == BC_MUL) {
-            a = LLVMBuildMul(builder, b, c, "");
-          } else if(inst.type == BC_DIV) {
-            if(a_type.info->data.integer.is_signed) a = LLVMBuildSDiv(builder, b, c, "");
-            else a = LLVMBuildUDiv(builder, b, c, "");
-          } else assert(false);
+          if(a_type.info->type == TYPE_INT && a_type.reference_count == 0) {
+            if(inst.type == BC_ADD) {
+              a = LLVMBuildAdd(builder, b, c, "");
+            } else if(inst.type == BC_SUB) {
+              a = LLVMBuildSub(builder, b, c, "");
+            } else if(inst.type == BC_MUL) {
+              a = LLVMBuildMul(builder, b, c, "");
+            } else if(inst.type == BC_DIV) {
+              if(a_type.info->data.integer.is_signed) a = LLVMBuildSDiv(builder, b, c, "");
+              else a = LLVMBuildUDiv(builder, b, c, "");
+            } else assert(false);
+          } else if(a_type.info->type == TYPE_FLOAT && a_type.reference_count == 0) {
+            if(inst.type == BC_ADD) {
+              a = LLVMBuildFAdd(builder, b, c, "");
+            } else if(inst.type == BC_SUB) {
+              a = LLVMBuildFSub(builder, b, c, "");
+            } else if(inst.type == BC_MUL) {
+              a = LLVMBuildFMul(builder, b, c, "");
+            } else if(inst.type == BC_DIV) {
+              a = LLVMBuildFDiv(builder, b, c, "");
+            } else assert(false);
+          }
 
           LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;
@@ -216,22 +254,45 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMValueRef c = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_c], "");
           Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
           Type c_type = fn.register_types.data[inst.data.bin_op.reg_c];
-          assert(b_type.info->type == TYPE_INT && c_type.info->type == TYPE_INT);
 
-          Type conv_type = integer_type_with(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed, max(b_type.info->data.integer.width, c_type.info->data.integer.width));
+          LLVMValueRef a;
+          if(b_type.info->type == TYPE_INT) {
+            Type conv_type = integer_type_with(b_type.info->data.integer.is_signed || c_type.info->data.integer.is_signed, max(b_type.info->data.integer.width, c_type.info->data.integer.width));
+            b = generate_llvm_cast(builder, b, b_type, conv_type);
+            c = generate_llvm_cast(builder, c, c_type, conv_type);
 
-          b = generate_llvm_cast(builder, b, b_type, conv_type);
-          c = generate_llvm_cast(builder, c, c_type, conv_type);
+            LLVMIntPredicate pred;
+            if(inst.type == BC_LESS_THAN) {
+              pred = conv_type.info->data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
+            } else if(inst.type == BC_LESS_THAN_EQUALS) {
+              pred = conv_type.info->data.integer.is_signed ? LLVMIntSLE : LLVMIntULE;
+            } else if(inst.type == BC_EQUALS) {
+              pred = LLVMIntEQ;
+            } else assert(false);
+            a = LLVMBuildICmp(builder, pred, b, c, "");
 
-          LLVMIntPredicate pred;
-          if(inst.type == BC_LESS_THAN) {
-            pred = conv_type.info->data.integer.is_signed ? LLVMIntSLT : LLVMIntULT;
-          } else if(inst.type == BC_LESS_THAN_EQUALS) {
-            pred = conv_type.info->data.integer.is_signed ? LLVMIntSLE : LLVMIntULE;
-          } else if(inst.type == BC_EQUALS) {
-            pred = LLVMIntEQ;
+          } else if(b_type.info->type == TYPE_FLOAT) {
+            Type conv_type;
+            if(can_implicitly_cast_type(b_type, c_type)) {
+              conv_type = c_type;
+            } else if(can_implicitly_cast_type(c_type, b_type)) {
+              conv_type = b_type;
+            } else assert(false);
+
+            b = generate_llvm_cast(builder, b, b_type, conv_type);
+            c = generate_llvm_cast(builder, c, c_type, conv_type);
+
+            LLVMIntPredicate pred;
+            if(inst.type == BC_LESS_THAN) {
+              pred = LLVMRealOLT;
+            } else if(inst.type == BC_LESS_THAN_EQUALS) {
+              pred = LLVMRealOLE;
+            } else if(inst.type == BC_EQUALS) {
+              pred = LLVMRealOEQ;
+            } else assert(false);
+            a = LLVMBuildFCmp(builder, pred, b, c, "");
           } else assert(false);
-          LLVMValueRef a = LLVMBuildICmp(builder, pred, b, c, "");
+
           LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;
         }
@@ -251,9 +312,14 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
 
         case BC_SET_LITERAL: {
           Type type = fn.register_types.data[inst.data.set_literal.reg_a];
-          LLVMTypeRef t = llvm_type_of(type);
-          LLVMValueRef a = LLVMConstInt(t, inst.data.set_literal.lit_b, 0);
-          LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
+          if(type.info->type == TYPE_BOOL || type.info->type == TYPE_INT) {
+            LLVMValueRef a = LLVMConstInt(llvm_type_of(type), inst.data.set_literal.lit_b, 0);
+            LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
+          } else if(type.info->type == TYPE_FLOAT) {
+            LLVMValueRef a = LLVMConstInt(llvm_type_of(INT_TYPE), inst.data.set_literal.lit_b, 0);
+            a = generate_llvm_cast(builder, a, INT_TYPE, type);
+            LLVMBuildStore(builder, a, r[inst.data.set_literal.reg_a]);
+          } else assert(false);
           break;
         }
 
@@ -467,7 +533,7 @@ void llvm_generate_module(Bytecode_Unit_Ptr_Array units, char *out_obj, char *ou
   LLVMAddAlwaysInlinerPass(pass_manager);
   {
     LLVMPassManagerBuilderRef pass_manager_builder = LLVMPassManagerBuilderCreate();
-    LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 1);
+    LLVMPassManagerBuilderSetOptLevel(pass_manager_builder, 0);
     LLVMPassManagerBuilderPopulateModulePassManager(pass_manager_builder, pass_manager);
     LLVMPassManagerBuilderDispose(pass_manager_builder);
   }
@@ -487,8 +553,6 @@ void llvm_generate_module(Bytecode_Unit_Ptr_Array units, char *out_obj, char *ou
   if(out_ir) {
     LLVMWriteBitcodeToFile(mod, out_ir);
   }
-
-  printf("Done.\n");
 
   LLVMDisposeTargetMachine(Target_machine);
   LLVMDisposeModule(mod);

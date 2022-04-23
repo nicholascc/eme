@@ -109,5 +109,6 @@ int main(int argc, char *argv[]) {
     llvm_generate_module(bytecode_units, out_obj, out_asm, out_ir);
   }
 
+  printf("Done.\n");
   return 0;
 }

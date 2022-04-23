@@ -67,6 +67,10 @@ bool can_implicitly_cast_type_info(Type_Info *before, Type_Info *after) {
     }
 
     return true;
+  } else if(before->type == TYPE_FLOAT && after->type == TYPE_FLOAT) {
+    return before->data.float_.width <= after->data.float_.width;
+  } else if(before->type == TYPE_UNKNOWN_INT && after->type == TYPE_FLOAT) {
+    return true;
   } else if(before->type == TYPE_UNKNOWN_INT && after->type == TYPE_UNKNOWN_INT) {
     return true;
   }
@@ -85,6 +89,7 @@ Type solidify_type(Type x) {
       return INT_TYPE;
 
     case TYPE_INT:
+    case TYPE_FLOAT:
     case TYPE_BOOL:
     case TYPE_STRUCT:
     case TYPE_POLY_INSTANCE:
@@ -756,7 +761,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
         if(arguments[i].type == ARGUMENT_NON_TYPE) {
           Ast_Passed_Parameter *param = (Ast_Passed_Parameter *)def->parameters.data[i];
           Type defined = type_of_type_expr(param->type_node, &instance_scope, unit, def->parameters.data[i]->loc, unit_poisoned);
-          Type passed = solidify_type(arguments[i].data.non_type);
+          Type passed = arguments[i].data.non_type;
           if(!can_implicitly_cast_type(passed, defined)) {
             free(instance_scope.entries.data);
             return false;
@@ -904,9 +909,9 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           Type second = infer_type_of_expr(n->second, scope, unit, true, unit_poisoned);
           if(first.info->type == TYPE_POISON || second.info->type == TYPE_POISON) return POISON_TYPE;
 
-          if((first.info->type != TYPE_INT && first.info->type != TYPE_UNKNOWN_INT) ||
-             (second.info->type != TYPE_INT && second.info->type != TYPE_UNKNOWN_INT))
-            type_inference_error("The operands to an arithmetic operator must be integers.", node->loc, unit_poisoned);
+          if((first.info->type != TYPE_INT && first.info->type != TYPE_UNKNOWN_INT && first.info->type != TYPE_FLOAT) ||
+             (second.info->type != TYPE_INT && second.info->type != TYPE_UNKNOWN_INT && second.info->type != TYPE_FLOAT))
+            type_inference_error("The operands to an arithmetic operator must be numbers.", node->loc, unit_poisoned);
 
           if(first.info->type == TYPE_UNKNOWN_INT && second.info->type == TYPE_UNKNOWN_INT) {
             s64 a = first.info->data.unknown_int;
@@ -959,8 +964,8 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           Type first = infer_type_of_expr(n->first, scope, unit, true, unit_poisoned);
           Type second = infer_type_of_expr(n->second, scope, unit, true, unit_poisoned);
           if(first.info->type == TYPE_POISON || second.info->type == TYPE_POISON) return POISON_TYPE;
-          if((first.info->type != TYPE_INT && first.info->type != TYPE_UNKNOWN_INT) ||
-             (second.info->type != TYPE_INT && second.info->type != TYPE_UNKNOWN_INT))
+          if((first.info->type != TYPE_INT && first.info->type != TYPE_UNKNOWN_INT && first.info->type != TYPE_FLOAT) ||
+             (second.info->type != TYPE_INT && second.info->type != TYPE_UNKNOWN_INT && second.info->type != TYPE_FLOAT))
             type_inference_error("The operands to a comparison operator must be integers.", node->loc, unit_poisoned);
           if(can_implicitly_cast_type(first, second))
             n->convert_to = solidify_type(second);
@@ -1200,7 +1205,7 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         }
         n->return_type = to;
         return to;
-      } else if(identifier == st_get_id_of("int_cast", -1)) {
+      } else if(identifier == st_get_id_of("num_cast", -1)) {
         if(n->arguments.length != 2) {
           type_inference_error(NULL, node->loc, unit_poisoned);
           printf("I expected 2 arguments to this function, but got %i instead.\n", n->arguments.length);
@@ -1209,9 +1214,11 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         }
         Type to = solidify_type(type_of_type_expr(n->arguments.data[0], scope, unit, n->arguments.data[0]->loc, unit_poisoned));
         Type from = solidify_type(infer_type_of_expr(n->arguments.data[1], scope, unit, true, unit_poisoned));
-        if(to.reference_count > 0 || from.reference_count > 0 || to.info->type != TYPE_INT || from.info->type != TYPE_INT) {
+        if(to.reference_count > 0 || from.reference_count > 0 ||
+           (to.info->type != TYPE_INT   && to.info->type != TYPE_FLOAT) ||
+           (from.info->type != TYPE_INT && from.info->type != TYPE_FLOAT)) {
           type_inference_error(NULL, node->loc, unit_poisoned);
-          printf("I cannot int_cast from ");
+          printf("I cannot num_cast from ");
           print_type(from);
           printf(" -> ", size_of_type(from));
           print_type(to);

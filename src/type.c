@@ -107,6 +107,19 @@ void init_primitive_types() {
   }
   INT_TYPE = INTEGER_TYPES[1][3];
   UINT_TYPE = INTEGER_TYPES[0][3];
+
+  infos[n] = (Type_Info) {TYPE_FLOAT, true, true, 4, {.float_={32}}};
+  FLOAT32_TYPE = (Type) {0, &infos[n++]};
+  infos[n] = (Type_Info) {TYPE_FLOAT, true, true, 8, {.float_={64}}};
+  FLOAT64_TYPE = (Type) {0, &infos[n++]};
+}
+
+Type float_type_with(u8 width) {
+  switch(width) {
+    case 32: return FLOAT32_TYPE;
+    case 64: return FLOAT64_TYPE;
+    default: assert(false);
+  }
 }
 
 Type integer_type_with(bool is_signed, u8 width) {
@@ -150,6 +163,10 @@ void print_type_info(Type_Info t) {
     case TYPE_INT: {
       if(t.data.integer.is_signed) printf("s%i", t.data.integer.width);
       else printf("u%i", t.data.integer.width);
+      break;
+    }
+    case TYPE_FLOAT: {
+      printf("f%i", t.data.float_.width);
       break;
     }
     case TYPE_BOOL: printf("bool"); break;
