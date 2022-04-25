@@ -340,7 +340,7 @@ Type evaluate_type_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
         s->entries = init_Scope_Entry_Array(2);
         info->data.poly_instance.scope = s;
       }
-      info->data.poly_instance.members = init_Compilation_Unit_Ptr_Array(def->members.length);
+      info->data.poly_instance.members = init_Compilation_Unit_Ptr_Array(def->members.length > 1 ? def->members.length : 2);
       info->data.poly_instance.llvm_generated = false;
 
       for(int i = 0; i < n->arguments.length; i++) {

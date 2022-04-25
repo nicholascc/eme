@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "c-utils/integer.h"
 #include "lexer.h"
 #include "ast.h"
@@ -38,6 +42,14 @@ int main(int argc, char *argv[]) {
   init_file_array();
   bytecode_units = init_Bytecode_Unit_Ptr_Array(2);
 
+#ifdef _WIN32
+  LARGE_INTEGER main_frequency;
+  LARGE_INTEGER main_start;
+
+  QueryPerformanceFrequency(&main_frequency);
+  QueryPerformanceCounter(&main_start);
+#endif
+
   int main_file_id = add_file(source_file);
 
   Compilation_Unit *main_module = parse_file(main_file_id);
@@ -55,22 +67,25 @@ int main(int argc, char *argv[]) {
 
   Bytecode_Unit *main;
   bool main_found = false;
-  for(int i = 0; i < main_module->data.module.scope.entries.length; i++) {
-    Scope_Entry entry = main_module->data.module.scope.entries.data[i];
-    Compilation_Unit *unit = entry.data.unit.unit;
-    if(unit->type == UNIT_FUNCTION_SIGNATURE) {
-      Compilation_Unit *body = unit->data.signature.body;
-      type_infer_compilation_unit(body);
-      generate_bytecode_compilation_unit(body);
-      Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
-      assert(body->node->type == NODE_FUNCTION_DEFINITION);
-      bool is_main = n->symbol == st_get_id_of("main", -1);
-      if(is_main) main_found = true;
-      if(body->poisoned) {
-        compilation_has_errors = true;
-      } else {
-        if(is_main) {
-          main = body->data.body.bytecode;
+  for(int i = 0; i < files.length; i++) {
+    Compilation_Unit *module = parse_file(i);
+    for(int j = 0; j < module->data.module.scope.entries.length; j++) {
+      Scope_Entry entry = module->data.module.scope.entries.data[j];
+      Compilation_Unit *unit = entry.data.unit.unit;
+      if(unit->type == UNIT_FUNCTION_SIGNATURE) {
+        Compilation_Unit *body = unit->data.signature.body;
+        type_infer_compilation_unit(body);
+        generate_bytecode_compilation_unit(body);
+        Ast_Function_Definition *n = (Ast_Function_Definition*)body->node;
+        assert(body->node->type == NODE_FUNCTION_DEFINITION);
+        bool is_main = n->symbol == st_get_id_of("main", -1);
+        if(is_main) main_found = true;
+        if(body->poisoned) {
+          compilation_has_errors = true;
+        } else {
+          if(is_main) {
+            main = body->data.body.bytecode;
+          }
         }
       }
     }
@@ -86,9 +101,37 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+#ifdef _WIN32
+  {
+    LARGE_INTEGER end;
+    double interval;
+    QueryPerformanceCounter(&end);
+    interval = (double) (end.QuadPart - main_start.QuadPart) / main_frequency.QuadPart;
+
+    printf("Compilation took %fs.\n", interval);
+  }
+
+  LARGE_INTEGER output_frequency;
+  LARGE_INTEGER output_start;
+
+  QueryPerformanceFrequency(&output_frequency);
+  QueryPerformanceCounter(&output_start);
+#endif
+
+
   if(mode == MODE_INTERPRET) {
     printf("Running input code...\n");
     interpret_bytecode_unit(main, NULL);
+#ifdef _WIN32
+    {
+      LARGE_INTEGER end;
+      double interval;
+      QueryPerformanceCounter(&end);
+      interval = (double) (end.QuadPart - output_start.QuadPart) / output_frequency.QuadPart;
+
+      printf("Interpreter took %fs.\n", interval);
+    }
+#endif
   } else if(mode == MODE_COMPILE) {
     char *out_obj = NULL;
     char *out_asm = NULL;
@@ -107,6 +150,17 @@ int main(int argc, char *argv[]) {
     }
 
     llvm_generate_module(bytecode_units, out_obj, out_asm, out_ir);
+
+#ifdef _WIN32
+    {
+      LARGE_INTEGER end;
+      double interval;
+      QueryPerformanceCounter(&end);
+      interval = (double) (end.QuadPart - output_start.QuadPart) / output_frequency.QuadPart;
+
+      printf("LLVM took %fs.\n", interval);
+    }
+#endif
   }
 
   printf("Done.\n");
