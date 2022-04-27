@@ -843,7 +843,7 @@ bool try_function_call(Argument *arguments, int argument_count, bool is_operator
     *return_type = FTYPE_TYPE;
     *to_call = unit;
     return true;
-  } else assert(false);
+  } else return false;
 }
 
 Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bool using_result, bool *unit_poisoned) {
