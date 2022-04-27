@@ -1521,7 +1521,7 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
       assert(unit->node->type == NODE_IMPORT);
 
       Ast_Import *import = (Ast_Import *)unit->node;
-      int file_id = add_file(import->filename);
+      int file_id = add_file(import->filename, import->n.loc);
       parse_file(file_id);
       File_Data *file_data = files.data+file_id;
       assert(file_data->parsed);

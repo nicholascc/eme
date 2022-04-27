@@ -21,6 +21,6 @@ GENERATE_DARRAY_HEADER(File_Data, File_Array);
 extern File_Array files;
 
 void init_file_array(void);
-int add_file(char *filename);
+int add_file(char *filename, Location loc);
 
 #endif /* end of include guard: FILES_H */

@@ -5,11 +5,15 @@
 #include <assert.h>
 
 #include "c-utils/darray.h"
+#include "errors.h"
 
-char *os_load_file(char *filename) {
+char *os_load_file(char *filename, Location loc) {
   int size = 0;
 	FILE *f = fopen(filename, "rb");
-	assert(f != NULL && "could not open file");
+  if(f == NULL) {
+    print_error(loc);
+    printf("I could not open file \"%s\".\n", filename);
+  }
 	fseek(f, 0, SEEK_END);
 	size = ftell(f);
 	fseek(f, 0, SEEK_SET);
@@ -30,8 +34,7 @@ void init_file_array(void) {
   files = init_File_Array(2);
 }
 
-// @Incomplete: check if file has already been added
-int add_file(char *filename) {
+int add_file(char *filename, Location loc) {
   for(int i = 0; i < files.length; i++) {
     if(strcmp(filename, files.data[i].filename) == 0) {
       return i;
@@ -39,7 +42,7 @@ int add_file(char *filename) {
   }
   File_Data d;
   d.filename = filename;
-  d.contents = os_load_file(filename);
+  d.contents = os_load_file(filename, loc);
   d.parsed = false;
   File_Array_push(&files, d);
   return files.length-1;
