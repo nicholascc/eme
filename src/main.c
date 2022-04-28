@@ -19,7 +19,8 @@
 
 typedef enum Compilation_Mode {
   MODE_INTERPRET,
-  MODE_COMPILE
+  MODE_COMPILE,
+  MODE_NOTHING
 } Compilation_Mode;
 
 int main(int argc, char *argv[]) {
@@ -32,6 +33,8 @@ int main(int argc, char *argv[]) {
     mode = MODE_INTERPRET;
   } else if(strcmp(argv[2], "-o") == 0) {
     mode = MODE_COMPILE;
+  } else if(strcmp(argv[2], "-b") == 0) {
+    mode = MODE_NOTHING;
   } else
     print_and_exit("Your second argument must be the compilation mode (-i or -o).");
 
@@ -161,7 +164,7 @@ int main(int argc, char *argv[]) {
       printf("LLVM took %fs.\n", interval);
     }
 #endif
-  }
+  } else if(mode == MODE_NOTHING);
 
   printf("Done.\n");
   return 0;
