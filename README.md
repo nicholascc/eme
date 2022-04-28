@@ -8,7 +8,16 @@ Here's a simple code example which recursively computes the factorial of an inte
 ```
 fac :: fn (x: int) -> int {
   if(1 < x) return x*fac(x-1);
-  else return x;
+  else return 1;
+}
+```
+And the iterative equivalent:
+```
+fac :: fn (x: int) -> int {
+  if(x == 0 || x == 1) return 1;
+  r := 1;
+  each(range(2, x+1)) r = r * it;
+  return r;
 }
 ```
 
