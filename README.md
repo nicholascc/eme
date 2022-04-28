@@ -1,6 +1,6 @@
 # Eme
 
-Eme is a low-level, strongly typed, and non-managed programming language with a compiler written in C. It's both compiled and interpreted, and is designed to support 'high-level' features such as advanced polymorphism, iterators, and operator overloading.
+Eme is a low-level, strongly typed, and non-managed programming language with a compiler written in C. It's both compiled and interpreted, and is designed to support 'high-level' features such as advanced polymorphism, iterators, and operator overloading, without run-time costs.
 
 'Eme' (<img src="http://psd.museum.upenn.edu/epsd/psl/img/popup/Oajg.png" height="20" />) means 'language' in Sumerian, the earliest known written language.
 
@@ -11,6 +11,8 @@ fac :: fn (x: int) -> int {
   else return x;
 }
 ```
+
+A longer code sample which constructs the 'array' data structure from the bottom up can be found below, and I've also open-sourced a [demo](https://github.com/nicholascc/eme-shooter-game) of the language which uses SDL2 to make a simple shooter game.
 
 ### Installation
 
@@ -43,6 +45,14 @@ cl.exe support.c /nologo /Fe"out.exe" /link "out.obj"
 ```
 
 This produces an output executable (`out.exe`), which is your compiled Eme program!
+
+There is an extra compilation mode:
+
+```
+eme source_file -b
+```
+
+This compilation mode is only used for benchmarking and only generates bytecode and then exits. It functionally does nothing but it's useful for testing the performance of the front end.
 
 
 ### Example code
