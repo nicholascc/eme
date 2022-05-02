@@ -7,6 +7,19 @@
 #include "c-utils/darray.h"
 #include "errors.h"
 
+char *concat(char *a, char *b) {
+  int size = 0;
+  while(a[size++] != 0);
+  int a_size = size;
+  while(b[size++ - a_size] != 0);
+
+  char *c = malloc(size-1);
+  for(int i = 0; i < a_size-1; i++) c[i] = a[i];
+  for(int i = 0; i < size-a_size-1; i++) c[i+a_size-1] = b[i];
+  c[size-2] = 0;
+  return c;
+}
+
 char *os_load_file(char *filename, Location loc) {
   int size = 0;
 	FILE *f = fopen(filename, "rb");
@@ -34,15 +47,16 @@ void init_file_array(void) {
   files = init_File_Array(2);
 }
 
-int add_file(char *filename, Location loc) {
+int add_file(char *root_directory, char *filename, Location loc) {
+  char *full_filename = concat(root_directory, filename);
   for(int i = 0; i < files.length; i++) {
-    if(strcmp(filename, files.data[i].filename) == 0) {
+    if(strcmp(full_filename, files.data[i].filename) == 0) {
       return i;
     }
   }
   File_Data d;
-  d.filename = filename;
-  d.contents = os_load_file(filename, loc);
+  d.filename = full_filename;
+  d.contents = os_load_file(full_filename, loc);
   d.parsed = false;
   File_Array_push(&files, d);
   return files.length-1;

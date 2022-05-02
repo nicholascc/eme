@@ -1521,7 +1521,38 @@ void type_infer_compilation_unit(Compilation_Unit *unit) {
       assert(unit->node->type == NODE_IMPORT);
 
       Ast_Import *import = (Ast_Import *)unit->node;
-      int file_id = add_file(import->filename, import->n.loc);
+      File_Data current_file = files.data[unit->node->loc.file_id];
+
+      int file_id;
+      {
+        int last_slash = -1;
+        {
+          int i = 0;
+          while(current_file.filename[i++] != 0) {
+            if(current_file.filename[i-1] == '/' || current_file.filename[i-1] == '\\') {
+              last_slash = i-1;
+            }
+          }
+        }
+        if(last_slash == -1) {
+          file_id = add_file("", import->filename, import->n.loc);
+        } else {
+          char *root = malloc(last_slash+2);
+          {
+            int i = 0;
+            while(i != last_slash) {
+              root[i] = current_file.filename[i];
+              i++;
+            }
+            root[last_slash] = '/';
+            root[last_slash+1] = 0;
+          }
+          file_id = add_file(root, import->filename, import->n.loc);
+          free(root);
+        }
+
+
+      }
       parse_file(file_id);
       File_Data *file_data = files.data+file_id;
       assert(file_data->parsed);

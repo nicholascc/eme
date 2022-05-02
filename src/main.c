@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
   QueryPerformanceCounter(&main_start);
 #endif
 
-  int main_file_id = add_file(source_file, NULL_LOCATION);
+  int main_file_id = add_file("", source_file, NULL_LOCATION);
 
   Compilation_Unit *main_module = parse_file(main_file_id);
   assert(main_module->type == UNIT_MODULE);
