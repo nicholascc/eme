@@ -94,6 +94,7 @@ Type solidify_type(Type x) {
     case TYPE_STRUCT:
     case TYPE_POLY_INSTANCE:
     case TYPE_UNIQUE:
+    case TYPE_POISON:
       return x;
 
     default:
