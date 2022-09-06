@@ -226,6 +226,7 @@ typedef enum Ast_Binary_Op_Type {
   OPPLUS_EQUALS,
   OPMINUS_EQUALS,
 
+  OPNOT,
   OPAND,
   OPOR,
 

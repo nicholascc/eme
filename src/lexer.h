@@ -33,7 +33,7 @@ typedef enum Token_Type {
 
   TOR,
   TCARET,
-  TTILDA,
+  TTILDE,
   TDOUBLE_OR,
   TDOUBLE_AMPERSAND,
   TNOT,

@@ -1,6 +1,7 @@
 #include "interpreter.h"
 
 #include "math.h"
+#include <stdio.h>
 
 #include "c-utils/integer.h"
 #include "bytecode.h"
@@ -216,6 +217,16 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
         local[r_to_id[reg_a]] = a;
         break;
       }
+      case BC_NOT: {
+        u32 reg_a = inst.data.bin_op.reg_a;
+        u32 reg_b = inst.data.bin_op.reg_b;
+        Type b_type = fn.register_types.data[reg_b];
+        assert(b_type.reference_count == 0 && b_type.info->type == TYPE_BOOL);
+        u8 b = local[r_to_id[reg_b]];
+        u8 a = !b;
+        local[r_to_id[reg_a]] = a;
+        break;
+      }
       case BC_EQUALS:
       case BC_LESS_THAN:
       case BC_LESS_THAN_EQUALS: {
@@ -251,7 +262,7 @@ u8 *interpret_bytecode_function(Bytecode_Function fn, u8 **params) {
           local[r_to_id[reg_a]] = a;
           break;
 
-          
+
         } else if(b_type.info->type == TYPE_FLOAT) {
           Type conv_type;
           if(can_implicitly_cast_type(b_type, c_type)) {
@@ -483,6 +494,28 @@ u8 *interpret_bytecode_unit(Bytecode_Unit *unit, u8 **params) {
         u8 param;
         memcpy(&param, params[0], sizeof(u8));
         printf("%c", param);
+      } else if(fn->u.name == st_get_id_of("getchar", -1)) {
+        result = malloc(sizeof(s32));
+        s32 *r_s32 = (s32 *)result;
+        *r_s32 = (s32)getchar();
+      } else if(fn->u.name == st_get_id_of("isspace", -1)) {
+        result = malloc(sizeof(u8));
+        u8 *r_u8 = (u8 *)result;
+        char param0;
+        memcpy(&param0, params[0], sizeof(char));
+        *r_u8 = isspace(param0);
+      } else if(fn->u.name == st_get_id_of("isdigit", -1)) {
+        result = malloc(sizeof(u8));
+        u8 *r_u8 = (u8 *)result;
+        char param0;
+        memcpy(&param0, params[0], sizeof(char));
+        *r_u8 = isdigit(param0);
+      } else if(fn->u.name == st_get_id_of("isalpha", -1)) {
+        result = malloc(sizeof(u8));
+        u8 *r_u8 = (u8 *)result;
+        char param0;
+        memcpy(&param0, params[0], sizeof(char));
+        *r_u8 = isalpha(param0);
       } else if(fn->u.name == st_get_id_of("exit", -1)) {
         u64 param;
         memcpy(&param, params[0], sizeof(u64));

@@ -40,7 +40,7 @@ To compile a program, run:
 ```
 eme source_file -o obj_file [asm_file] [llvm_ir_file]
 ```
-This will output an object file, along with optionally an x64 assembly file and an LLVM bytecode file. Currently, Eme relies on the C standard library for interfacing with the operating system, so the recommended way to compile it is by linking it to a short C program.
+This will output an object file, along with optionally an x64 assembly file and an LLVM bytecode file. Currently, Eme relies on the C standard library for interfacing with the operating system, so the recommended way to compile it is by linking it to a short C program. Note that these file paths must be not be relative.
 
 For example, I compile my Eme programs with this file:
 

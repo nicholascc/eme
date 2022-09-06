@@ -40,6 +40,7 @@ bool is_infix_operator(Token t) {
     case TASTERISK:
     case TFORWARD_SLASH:
     case TMODULUS:
+    case TTILDE:
     case TEQUALS:
     case TPLUS_EQUALS:
     case TMINUS_EQUALS:
@@ -68,6 +69,7 @@ bool is_prefix_operator(Token t) {
     case TCARET:
     case TDOUBLE_PLUS:
     case TDOUBLE_MINUS:
+    case TNOT:
       return true;
     default:
       return false;
@@ -238,6 +240,7 @@ Ast_Unary_Op *unary_op_to_ast(Token operator, Ast_Node *operand, bool prefix) {
     case TMINUS: ast_op = OPNEGATE; break;
     case TASTERISK: ast_op = OPDEREFERENCE; break;
     case TCARET: ast_op = OPREFERENCE; break;
+    case TNOT: ast_op = OPNOT; break;
     case TDOUBLE_PLUS:
       if(prefix) ast_op = OPPLUS_PLUS_FIRST;
       else ast_op = OPPLUS_PLUS_SECOND;
@@ -339,6 +342,9 @@ u8_pair infix_op_binding_power(Token_Type type) {
     case TMODULUS:
       return (u8_pair){25,26};
 
+    case TTILDE:
+      return (u8_pair){4,3};
+
     case TDOT:
     case TDOT_CARET:
     case TOPEN_BRACKET:
@@ -356,6 +362,7 @@ u8 prefix_op_binding_power(Token_Type type) {
     case TCARET:
     case TDOUBLE_PLUS:
     case TDOUBLE_MINUS:
+    case TNOT:
       return 40;
     default: assert(false && "(internal compiler error) prefix op does not exist");
   }
@@ -480,8 +487,17 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
           error_unexpected_token(next);
         lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
         lhs_needs_semicolon = true;
+      } else if(op.type == TTILDE) {
+        Token next = peek_token(r);
+        if(next.type != TSYMBOL)
+          error_unexpected_token(next);
+        Ast_Node *identifier = (Ast_Node *)symbol_to_ast(next);
+        Token paren = peek_token(r);
+        if(paren.type != TOPEN_PAREN)
+          error_unexpected_token(paren);
+        lhs_ast = parse_function_call(r, scope, lhs_ast, identifier, paren, uses_bind_symbol);
       } else if(op.type == TOPEN_PAREN) {
-        lhs_ast = (Ast_Node *)parse_function_call(r, scope, lhs_ast, op, uses_bind_symbol);
+        lhs_ast = (Ast_Node *)parse_function_call(r, scope, NULL, lhs_ast, op, uses_bind_symbol);
       } else {
         Ast_Node *rhs_ast = parse_expression(r, scope, powers.right, NULL, uses_bind_symbol);
         lhs_ast = (Ast_Node *)binary_op_to_ast(lhs_ast, op, rhs_ast);
@@ -503,8 +519,9 @@ Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *ne
   return lhs_ast;
 }
 
-Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *identifier, Token open_paren, bool *uses_bind_symbol) {
+Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *tilde_argument, Ast_Node *identifier, Token open_paren, bool *uses_bind_symbol) {
   Ast_Node_Ptr_Array args = init_Ast_Node_Ptr_Array(2);
+  if(tilde_argument) Ast_Node_Ptr_Array_push(&args, tilde_argument);
   save_state(r);
   Token first = peek_token(r);
   if(first.type != TCLOSE_PAREN) {

@@ -5,7 +5,8 @@
 #include "ast.h"
 
 Ast_Node *parse_expression(Token_Reader *r, Scope *scope, u8 min_power, bool *needs_semicolon, bool *uses_bind_symbol);
-Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *function, Token open_paren, bool *uses_bind_symbol);
+// tilde_argument can be the first argument of the function in a tilde-expression (e.g. arr~append(test))
+Ast_Node *parse_function_call(Token_Reader *r, Scope *scope, Ast_Node *tilde_argument, Ast_Node *function, Token open_paren, bool *uses_bind_symbol);
 Ast_Node *parse_any_statement(Token_Reader *r, Scope *scope, bool require_semicolon_for_expressions);
 Ast_Node *parse_decl(Token_Reader *r, Scope *scope);
 Ast_Node *parse_block(Token_Reader *r, Scope *parent_scope);

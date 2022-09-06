@@ -608,6 +608,14 @@ u32 generate_bytecode_expr(Ast_Node *node, u32 *block, Bytecode_Function *fn, Sc
                                           result_reg,
                                           reg_b);
         }
+        case OPNOT: {
+          u32 reg_b = generate_bytecode_expr(n->operand, block, fn, scope);
+          Type result_type = fn->register_types.data[reg_b];
+          u32 result_reg = add_register(fn, result_type);
+          return add_unary_op_instruction(&fn->blocks.data[*block], BC_NOT,
+                                          result_reg,
+                                          reg_b);
+        }
         default: {
           print_error_message("Internal compiler error: I cannot generate bytecode for this node.", node->loc);
           exit(1);

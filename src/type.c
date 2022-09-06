@@ -188,7 +188,7 @@ void print_type_info(Type_Info t) {
     }
     case TYPE_UNIQUE: print_symbol(t.data.unique.name); break;
     default:
-      printf("(unprintable type)"); break;
+      printf("(unprintable type)%i",t.type); break;
   }
 }
 

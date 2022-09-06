@@ -62,10 +62,7 @@ int main(int argc, char *argv[]) {
     printf("An error occurred during parsing, exiting.\n");
     exit(1);
   }
-
-  //printf("\n\nParsed result:\n\n");
-  // print_compilation_unit(main_module);
-
+  
   bool compilation_has_errors = false;
 
   Bytecode_Unit *main;

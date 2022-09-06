@@ -246,6 +246,20 @@ void generate_llvm_function(LLVMModuleRef mod, LLVMBuilderRef builder, Bytecode_
           LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
           break;
         }
+        case BC_NOT: {
+          LLVMValueRef b = LLVMBuildLoad(builder, r[inst.data.bin_op.reg_b], "");
+          {
+            Type b_type = fn.register_types.data[inst.data.bin_op.reg_b];
+
+            b = generate_llvm_cast(builder, b, b_type, BOOL_TYPE);
+          }
+
+          LLVMValueRef a;
+          a = LLVMBuildNot(builder, b, "");
+
+          LLVMBuildStore(builder, a, r[inst.data.bin_op.reg_a]);
+          break;
+        }
 
         case BC_EQUALS:
         case BC_LESS_THAN:

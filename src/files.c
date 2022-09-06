@@ -7,7 +7,7 @@
 #include "c-utils/darray.h"
 #include "errors.h"
 
-char *concat_path(char *a, char *b, Location loc) {
+char *concat_path(char *a, char *b) {
   int size = 0;
   while(a[size++] != 0);
   int a_size = size-1;
@@ -85,7 +85,7 @@ void init_file_array(void) {
 }
 
 int add_file(char *root_directory, char *filename, Location loc) {
-  char *full_filename = concat_path(root_directory, filename, loc);
+  char *full_filename = concat_path(root_directory, filename);
   for(int i = 0; i < files.length; i++) {
     if(strcmp(full_filename, files.data[i].filename) == 0) {
       return i;

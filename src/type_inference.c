@@ -895,6 +895,16 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
           }
           return op;
         }
+        case OPNOT: {
+          Type op = infer_type_of_expr(n->operand, scope, unit, true, unit_poisoned);
+          if(op.info->type == TYPE_POISON) return POISON_TYPE;
+          else if(op.info->type == TYPE_BOOL && op.reference_count == 0) {
+            return BOOL_TYPE;
+          } else {
+            type_inference_error("I cannot use the '!' operator on a non-bool type.", n->n.loc, unit_poisoned);
+            return POISON_TYPE;
+          }
+        }
         default: assert(false);
       }
       break;
@@ -1258,9 +1268,24 @@ Type infer_type_of_expr(Ast_Node *node, Scope *scope, Compilation_Unit *unit, bo
             n->body = body;
             return return_type;
           } else {
-            free(arguments);
             type_inference_error(NULL, node->loc, unit_poisoned);
-            printf("I cannot find a function %s with these argument types.\n", st_get_str_of(identifier));
+            if(n->arguments.length == 0) {
+              printf("I cannot find a function %s with no arguments.\n", st_get_str_of(identifier));
+            } else {
+              printf("I cannot find a function %s with arguments: ", st_get_str_of(identifier));
+              for(int i = 0; i < n->arguments.length; i++) {
+                if(i > 0) printf(", ");
+                if(arguments[i].type == ARGUMENT_TYPE) {
+                  printf("type ");
+                  print_type(arguments[i].data.type);
+                } else {
+                  print_type(arguments[i].data.non_type);
+                }
+              }
+              printf(".\n");
+            }
+
+            free(arguments);
             return POISON_TYPE;
           }
         }

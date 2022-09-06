@@ -56,7 +56,7 @@ void print_token(Token t) {
 
     case TOR:               printf("|"); break;
     case TCARET:              printf("^"); break;
-    case TTILDA:            printf("~"); break;
+    case TTILDE:            printf("~"); break;
     case TDOUBLE_OR:        printf("||"); break;
     case TDOUBLE_AMPERSAND: printf("&&"); break;
     case TNOT:              printf("!"); break;
@@ -404,7 +404,7 @@ Token_Array lex_string(char *to_lex, int file_id) {
                     t.type = TCARET;
                     break;
                   }
-        case '~': t.type = TTILDA; break;
+        case '~': t.type = TTILDE; break;
         case '!': if(next_c == '=') {
                     t.type = TNOT_EQUALS;
                     i++;
